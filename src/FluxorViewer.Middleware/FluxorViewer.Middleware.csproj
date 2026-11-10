@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Fluxor" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FluxorViewer.Protocol\FluxorViewer.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>
