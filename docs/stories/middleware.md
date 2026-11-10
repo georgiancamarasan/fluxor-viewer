@@ -65,6 +65,7 @@ As a developer, I want to hide high-frequency Actions so the list stays readable
 
 As a developer, I want the same registration to work on Server and WebAssembly.
 
+- `samples/AutoSample` calls `UseFluxorViewer` on both Server and `.Client`, enabled only in Development.
 - In `samples/AutoSample` with the Viewer running, a Server Session appears when the circuit starts, and a WebAssembly Session appears once WASM takes over.
 - No Session is created during prerendering.
 - Connecting from WebAssembly works with the Viewer's default CORS policy.

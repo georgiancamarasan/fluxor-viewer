@@ -1,0 +1,24 @@
+@page "/serialisation"
+@inherits FluxorComponent
+@inject IState<CyclicState> Cyclic
+@inject IState<UnserialisableState> Unserialisable
+@inject IDispatcher Dispatcher
+
+<PageTitle>Serialisation</PageTitle>
+
+<h1>Serialisation</h1>
+
+<h2 class="h4 mt-4">Cyclic</h2>
+<p>Every child points back to its parent. The Viewer should still show this state, with the cycles cut.</p>
+<p>Children: @Cyclic.Value.Root.Children.Count</p>
+<button class="btn btn-primary" @onclick="AddChild">Add child</button>
+
+<h2 class="h4 mt-4">Unserialisable</h2>
+<p>This state holds a delegate. The Viewer should show it as an error, and other Features should be unaffected.</p>
+<p>Describe(): @Unserialisable.Value.Describe()</p>
+<button class="btn btn-primary" @onclick="Bump">Bump version</button>
+
+@code {
+    private void AddChild() => Dispatcher.Dispatch(new AddCyclicChildAction());
+    private void Bump() => Dispatcher.Dispatch(new BumpUnserialisableAction());
+}

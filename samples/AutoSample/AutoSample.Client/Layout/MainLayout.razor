@@ -1,4 +1,6 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+
+<Fluxor.Blazor.Web.StoreInitializer />
 
 <div class="page">
     <div class="sidebar">
@@ -7,7 +9,7 @@
 
     <main>
         <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+            <span>Running on: <strong>@RunningOn</strong></span>
         </div>
 
         <article class="content px-4">
@@ -21,3 +23,7 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    private string RunningOn => RendererInfo.IsInteractive ? RendererInfo.Name : $"{RendererInfo.Name} (prerendering)";
+}

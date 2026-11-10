@@ -1,4 +1,4 @@
-using AutoSample.Client.Pages;
+using AutoSample.Client.Store;
 using AutoSample.Components;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,6 +7,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddInteractiveWebAssemblyComponents();
+
+builder.Services.AddSampleFluxor();
 
 var app = builder.Build();
 

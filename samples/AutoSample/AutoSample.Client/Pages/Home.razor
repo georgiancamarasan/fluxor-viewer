@@ -1,0 +1,15 @@
+@page "/"
+
+<PageTitle>Home</PageTitle>
+
+<h1>AutoSample</h1>
+
+<p>A Blazor <code>InteractiveAuto</code> app with Fluxor on both Server and WebAssembly, for testing Fluxor Viewer by hand.</p>
+
+<ul>
+    <li><a href="counter">Counter</a>: one Action at a time, or a burst of 5,000.</li>
+    <li><a href="items">Items</a>: a list loaded through an Effect.</li>
+    <li><a href="serialisation">Serialisation</a>: state with cycles, and state that can't be serialised.</li>
+</ul>
+
+<p>The top bar shows where components are running. The first visit runs on a Server circuit. After a reload, once WebAssembly has downloaded, the page runs in the browser instead and you get a separate Session.</p>

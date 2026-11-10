@@ -14,9 +14,11 @@ As a contributor, I want the solution laid out with build and test automation so
 As a contributor, I want a realistic sample app so I can test the middleware end to end by hand.
 
 - `samples/AutoSample` is a Blazor Web App with `InteractiveAuto` render mode and Fluxor registered on both Server and `.Client`.
-- It has at least three Features: a counter, a list loaded through an Effect, and one whose state contains a non-serialisable member (for MW-4).
-- It has a button that dispatches a burst of 5,000 Actions (for MW-5/MW-6).
-- `UseFluxorViewer` is enabled only in Development.
+- Interactivity is global `InteractiveAuto` with prerendering on; Features, Actions, Reducers and Effects live in `.Client` and are registered by one shared call from both hosts.
+- It has these Features: a counter, a list loaded through an Effect, one whose state contains cycles (should serialise), and one whose state contains a non-serialisable member (should become an error) — the last two for MW-4.
+- It has a button that dispatches a burst of 5,000 Actions and shows how long the dispatch took (for MW-5/MW-6).
+- The layout shows whether components are running on Server, WebAssembly, or prerendering.
+- Both projects reference `FluxorViewer.Middleware`; enabling it is part of MW-8.
 
 ## PK-3 — NuGet packages for Middleware and Protocol
 

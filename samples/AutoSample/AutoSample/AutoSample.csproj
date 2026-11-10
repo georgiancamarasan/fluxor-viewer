@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AutoSample.Client\AutoSample.Client.csproj" />
+    <ProjectReference Include="..\..\..\src\FluxorViewer.Middleware\FluxorViewer.Middleware.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
   </ItemGroup>
 

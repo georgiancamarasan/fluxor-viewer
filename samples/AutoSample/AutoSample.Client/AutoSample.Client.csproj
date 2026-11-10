@@ -8,6 +8,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="Fluxor.Blazor.Web" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\FluxorViewer.Middleware\FluxorViewer.Middleware.csproj" />
   </ItemGroup>
 
 </Project>
