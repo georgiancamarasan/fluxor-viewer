@@ -7,7 +7,8 @@ As an app developer, I want to add the Viewer middleware with one call so that m
 - `.UseFluxorViewer(v => …)` on Fluxor options registers the middleware.
 - Options: `ServerUrl` (default `http://localhost:5299`), `AppName` (default entry assembly name), `BufferSize` (default 1000), `Enabled` (default false), `IgnoreAction(Func<object,bool>)`.
 - With `Enabled = false` the middleware makes no network connection and serialises nothing (verified by test).
-- Invalid options (e.g. a non-absolute `ServerUrl` or `BufferSize < 1`) fail fast at startup with a descriptive exception.
+- With `Enabled = true`, invalid options (a `ServerUrl` that isn't an absolute http/https URL, a blank `AppName`, or `BufferSize < 1`) fail fast at registration with one descriptive exception listing every problem. Invalid options are ignored while disabled.
+- Calling `UseFluxorViewer` twice on the same Fluxor options throws.
 
 ## MW-2 — Create a Session and send a Snapshot on start
 

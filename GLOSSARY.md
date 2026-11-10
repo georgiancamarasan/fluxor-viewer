@@ -4,6 +4,10 @@ A developer debugging tool: an app using Fluxor reports what happens to its stat
 
 ## Language
 
+**Host app**:
+The application using Fluxor that reports its Sessions to the Viewer, identified to the Viewer by its app name; one Host app can produce many Sessions.
+_Avoid_: Client, target, app (on its own)
+
 **Session**:
 One running instance of a Fluxor store inside a host app (e.g. one Blazor Server circuit, or one browser tab running WebAssembly), as seen by the viewer.
 _Avoid_: Store, connection, client, app
