@@ -58,7 +58,8 @@ When `Enabled` is false the middleware does nothing: no connection, no serialisa
 
 1. **`InitializeAsync(dispatcher, store)`**: generate a `SessionId` (GUID, one per store instance), detect `Runtime` (`OperatingSystem.IsBrowser()` → `WebAssembly`, otherwise `Server`), capture the state reference of every Feature in `store.Features`, and start the background sender.
 2. **`AfterDispatch(action)`**: runs after reducers. Assign the next `Sequence`, compare each Feature's `GetState()` by reference against the last captured one (Fluxor state is immutable), serialise the Action and only the **changed** Features, and enqueue the message. Ignored Actions update the captured references but aren't enqueued.
-3. **Background sender**: reads from a bounded `Channel`, batches messages, and sends them over SignalR. On every (re)connect it first sends a **Snapshot** of all Features, then whatever is still buffered.
+3. **Background sender**: reads from a bounded `Channel`, batches messages, and sends them over SignalR. On every (re)connect it first sends a **Snapshot** of all Features, captured at that moment, then whatever is still buffered. `InitializeAsync` never waits for the connection.
+4. **Dispose**: the middleware is scoped like the store, so when the scope ends (e.g. a Blazor circuit closes) it cancels any pending connect and closes the hub connection, and the Viewer sees the Session disconnect.
 
 ### Safety guarantees
 

@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Fluxor.DependencyInjection;
 using FluxorViewer.Middleware;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 // In Fluxor's namespace so it shows up in AddFluxor(o => o.…) without an extra using.
 namespace Fluxor;
@@ -31,6 +32,7 @@ public static class FluxorViewerFluxorOptionsExtensions
 
         viewerOptions.Validate();
         options.Services.AddSingleton(viewerOptions);
+        options.Services.TryAddSingleton<IViewerConnectionFactory, SignalRViewerConnectionFactory>();
         return options.AddMiddleware<FluxorViewerMiddleware>();
     }
 }
