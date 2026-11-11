@@ -12,6 +12,7 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
 
     <!-- Testing -->
+    <PackageVersion Include="bunit" Version="2.15.2" />
     <PackageVersion Include="xunit.v3" Version="4.0.3" />
   </ItemGroup>
 </Project>

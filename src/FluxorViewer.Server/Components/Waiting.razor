@@ -1,0 +1,20 @@
+@inject NavigationManager Navigation
+
+<div class="mx-auto mt-16 max-w-2xl px-4" data-test="waiting">
+    <p class="text-lg">Waiting for an app to connect…</p>
+    <p class="muted mt-2">Add the middleware to your Fluxor registration, then run the app:</p>
+    <pre class="mt-4 overflow-x-auto rounded-md bg-zinc-100 p-4 font-mono text-sm dark:bg-zinc-900">@Snippet</pre>
+</div>
+
+@code {
+    private string Snippet => $$"""
+        // dotnet add package FluxorViewer.Middleware
+        builder.Services.AddFluxor(o => o
+            .ScanAssemblies(typeof(Program).Assembly)
+            .UseFluxorViewer(v =>
+            {
+                v.Enabled = builder.Environment.IsDevelopment(); // WebAssembly: builder.HostEnvironment
+                v.ServerUrl = "{{Navigation.BaseUri.TrimEnd('/')}}";
+            }));
+        """;
+}

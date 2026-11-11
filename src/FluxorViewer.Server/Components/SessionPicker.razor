@@ -1,0 +1,39 @@
+<label class="flex items-center gap-2" data-test="session-picker">
+    <span class="toolbar-label">Session</span>
+    @if (Current is { } current)
+    {
+        var connected = current.Status == SessionStatus.Connected;
+        <span class="status-dot @(connected ? "bg-green-500" : "bg-zinc-400")"
+              data-test="status-dot" data-status="@(connected ? "connected" : "disconnected")"
+              title="@(connected ? "Connected" : "Disconnected")"></span>
+    }
+    <select class="control" value="@Selected?.ToString()" @onchange="OnChange">
+        @if (Selected is null)
+        {
+            <option value="" disabled selected>Pick a Session…</option>
+        }
+        @* Newest first: most recently seen by the Viewer. *@
+        @foreach (var session in Sessions.Reverse())
+        {
+            <option value="@session.SessionId">@Label(session)</option>
+        }
+    </select>
+</label>
+
+@code {
+    /// <summary>Every Session, in the order the Viewer first saw them.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<ReceivedSession> Sessions { get; set; } = [];
+
+    [Parameter] public Guid? Selected { get; set; }
+
+    [Parameter] public EventCallback<Guid> SelectedChanged { get; set; }
+
+    private ReceivedSession? Current => Sessions.FirstOrDefault(s => s.SessionId == Selected);
+
+    /// <summary>● or ○ keeps the status readable in the open list, where options can't be coloured.</summary>
+    private static string Label(ReceivedSession session) =>
+        $"{(session.Status == SessionStatus.Connected ? "●" : "○")} {session.AppName} · {session.Runtime} · {session.ShortId}";
+
+    private Task OnChange(ChangeEventArgs e) =>
+        Guid.TryParse(e.Value as string, out var sessionId) ? SelectedChanged.InvokeAsync(sessionId) : Task.CompletedTask;
+}

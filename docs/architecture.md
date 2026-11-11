@@ -120,13 +120,20 @@ Why changed-Features-only plus Snapshots instead of full state every time: see [
 └──────────────────────────┴───────────────────────────────────────────┘
 ```
 
-- **Session picker**: all Sessions, with a connected/disconnected dot; auto-selects when only one exists.
+- **Session picker**: all Sessions as "AppName · Runtime · shortId", newest first (most recently seen by the Viewer), marked ●/○ with a green/grey dot for connected/disconnected. The selection belongs to the Viewer tab and follows these rules (`SessionSelection`):
+  - Whenever nothing is selected and exactly one Session exists, it's selected. If the selected Session is removed, the selection empties and this applies again; with several Sessions and none selected, the panes say "Pick a Session".
+  - If the selected Session is disconnected and a new Session with the same app name and Runtime arrives, the picker switches to it, so reloading the host app keeps you on it. A Server Session never takes over from a WebAssembly one.
+  - With no Sessions, the page shows "Waiting for an app to connect…" and a `UseFluxorViewer` snippet with this Viewer's URL.
 - **Feature picker**: Features of the selected Session; the choice is remembered by name when switching Sessions.
 - **Action list**: every Action. Actions that didn't change the selected Feature are dimmed. There's a "changed only" toggle, a type-name filter, and Resync marker rows.
 - **Right pane**: payload strip for the selected Action; **State** tab = the selected Feature's state *after* the selected Action; **Diff** tab = before → after rendered with `jsondiffpatch` via JS interop, or "No change to <Feature>".
 - **Follow mode**: on by default, so the newest Action stays selected. Selecting an older Action pauses it and a "▼ N new" pill appears; clicking the pill resumes follow mode.
 
 Updates reach the developer's browser through the Blazor Server circuit; no extra hub is needed for the UI.
+
+The UI is interactive server rendering with prerendering off (a prerender would subscribe to the registry twice). Components re-read the registry when it raises `Changed`; the picker ignores `EntriesAppended`.
+
+Styling is Tailwind v4, utility classes in the markup with `@apply` only for repeated pieces, and dark mode following the OS. `Styles/app.css` is built into `wwwroot/app.css` (gitignored) by an incremental MSBuild target that runs `npm ci` and the Tailwind CLI, so building the Viewer needs Node; the packaged tool ships the built CSS. During development, run `npm run watch` in `src/FluxorViewer.Server` alongside `dotnet watch`.
 
 ### Hosting
 

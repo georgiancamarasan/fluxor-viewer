@@ -14,6 +14,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      # The Viewer's CSS is built with Tailwind during dotnet build.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Restore
         run: dotnet restore FluxorViewer.sln
 

@@ -4,4 +4,33 @@
     <ProjectReference Include="..\FluxorViewer.Protocol\FluxorViewer.Protocol.csproj" />
   </ItemGroup>
 
+  <!--
+    Tailwind: Styles/app.css is built into wwwroot/app.css (gitignored) before every build that needs it.
+    Requires Node; installed tools ship the built CSS. During development, `npm run watch` rebuilds on .razor edits
+    that hot reload applies without a build.
+  -->
+  <PropertyGroup>
+    <TailwindInput>Styles/app.css</TailwindInput>
+    <TailwindOutput>wwwroot/app.css</TailwindOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <TailwindSource Include="Components/**/*.razor;Styles/**/*.css" />
+    <UpToDateCheckInput Include="@(TailwindSource)" />
+  </ItemGroup>
+
+  <Target Name="NpmInstall" Inputs="package.json;package-lock.json" Outputs="node_modules/.package-lock.json">
+    <Exec Command="npm ci --no-fund --no-audit" />
+  </Target>
+
+  <Target Name="Tailwind" DependsOnTargets="NpmInstall" BeforeTargets="BeforeBuild"
+          Inputs="@(TailwindSource);package-lock.json" Outputs="$(TailwindOutput)">
+    <Exec Command="npm run build --silent" />
+    <!-- On a clean build the file didn't exist when wwwroot was globbed, so add it for static web assets. -->
+    <ItemGroup>
+      <Content Remove="$(TailwindOutput)" />
+      <Content Include="$(TailwindOutput)" />
+    </ItemGroup>
+  </Target>
+
 </Project>

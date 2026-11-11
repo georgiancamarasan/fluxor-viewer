@@ -1,0 +1,69 @@
+@page "/"
+@implements IDisposable
+@inject SessionRegistry Registry
+
+<PageTitle>Fluxor Viewer</PageTitle>
+
+<div class="flex h-screen flex-col">
+    <header class="flex flex-wrap items-center gap-4 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+        <SessionPicker Sessions="sessions" Selected="selection.Selected" SelectedChanged="Select" />
+        <label class="flex items-center gap-2" data-test="feature-picker">
+            <span class="toolbar-label">Feature</span>
+            <select class="control" disabled></select>
+        </label>
+        <button class="control" disabled data-test="clear">Clear</button>
+    </header>
+
+    @if (sessions.Count == 0)
+    {
+        <Waiting />
+    }
+    else
+    {
+        <main class="flex min-h-0 flex-1">
+            <section class="pane w-96 shrink-0 border-r border-zinc-200 dark:border-zinc-800">
+                <Placeholder Selected="selection.Selected is not null">Actions</Placeholder>
+            </section>
+            <section class="pane flex-1">
+                <Placeholder Selected="selection.Selected is not null">State</Placeholder>
+            </section>
+        </main>
+    }
+</div>
+
+@code {
+    private readonly SessionSelection selection = new();
+    private IReadOnlyList<ReceivedSession> sessions = [];
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+        Registry.Changed += OnChanged;
+    }
+
+    private void OnChanged(SessionChange change)
+    {
+        // Actions are UI-7's concern; the picker only cares about Sessions coming, going and (dis)connecting.
+        if (change is EntriesAppended)
+            return;
+        _ = InvokeAsync(() =>
+        {
+            Refresh();
+            StateHasChanged();
+        });
+    }
+
+    private void Refresh()
+    {
+        sessions = Registry.GetSessions();
+        selection.Update(sessions);
+    }
+
+    private void Select(Guid sessionId)
+    {
+        selection.Select(sessionId);
+        selection.Update(sessions);
+    }
+
+    public void Dispose() => Registry.Changed -= OnChanged;
+}

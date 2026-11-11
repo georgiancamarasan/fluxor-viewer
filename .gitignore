@@ -480,3 +480,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Node (Tailwind build) and its generated CSS
+node_modules/
+src/FluxorViewer.Server/wwwroot/app.css

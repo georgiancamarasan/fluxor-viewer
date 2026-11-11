@@ -1,3 +1,4 @@
+using FluxorViewer.Server.Components;
 using FluxorViewer.Server.Ingest;
 using FluxorViewer.Server.Sessions;
 
@@ -6,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<SessionRegistry>();
 builder.Services.AddSingleton<ISessionRegistry>(sp => sp.GetRequiredService<SessionRegistry>());
 builder.Services.AddSingleton<IngestRejections>();
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
 // Real Snapshots easily exceed SignalR's 32 KB default; the Viewer only listens on localhost.
 builder.Services.AddSignalR(o => o.MaximumReceiveMessageSize = IngestLimits.MaximumMessageSize);
@@ -21,6 +23,8 @@ var app = builder.Build();
 
 app.UseCors();
 app.MapHub<IngestHub>(IngestHub.Path).RequireCors(IngestLimits.CorsPolicy);
-app.MapGet("/", () => "Hello World!");
+app.UseAntiforgery();
+app.MapStaticAssets();
+app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

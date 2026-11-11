@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <title>Fluxor Viewer</title>
+    <HeadOutlet @rendermode="Mode" />
+</head>
+<body class="bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <Routes @rendermode="Mode" />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+</html>
+
+@code {
+    // Prerendering would render the page twice and subscribe to the registry twice; a localhost tool gains nothing from it.
+    private static readonly IComponentRenderMode Mode = new InteractiveServerRenderMode(prerender: false);
+}
