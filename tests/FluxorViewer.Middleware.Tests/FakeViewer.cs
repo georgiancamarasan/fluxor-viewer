@@ -15,6 +15,9 @@ internal sealed class FakeViewer : IViewerConnectionFactory
 
     public Exception? ConnectFailure { get; init; }
 
+    /// <summary>When set, sending Actions throws this.</summary>
+    public Exception? ActionsFailure { get; set; }
+
     public IReadOnlyCollection<FakeConnection> Connections => connections;
 
     public Task<FakeConnection> FirstConnection => firstConnection.Task;
@@ -62,6 +65,17 @@ internal sealed class FakeViewer : IViewerConnectionFactory
             firstMessage.TrySetResult(snapshot);
             return Task.CompletedTask;
         }
+
+        public Task SendActionsAsync(IReadOnlyList<ActionRecorded> actions, CancellationToken cancellationToken)
+        {
+            if (viewer.ActionsFailure is { } failure)
+                throw failure;
+            foreach (var action in actions)
+                Sent.Enqueue(action);
+            return Task.CompletedTask;
+        }
+
+        public IReadOnlyList<ActionRecorded> Actions => Sent.OfType<ActionRecorded>().ToList();
 
         public ValueTask DisposeAsync()
         {

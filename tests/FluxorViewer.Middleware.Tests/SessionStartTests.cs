@@ -9,9 +9,9 @@ namespace FluxorViewer.Middleware.Tests;
 // MW-2: each store becomes a Session and sends a Snapshot once connected.
 public class SessionStartTests
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
+    private static TimeSpan Timeout => Wait.Timeout;
 
-    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+    private static CancellationToken Ct => Wait.Ct;
 
     private static ServiceProvider Provider(FakeViewer viewer, CapturingLoggerFactory? logs = null, params Type[] featureTypes)
     {
@@ -134,7 +134,7 @@ public class SessionStartTests
         await StartStore(provider);
         var connection = await viewer.FirstConnection.WaitAsync(Timeout, Ct);
 
-        await WaitUntil(() => logs.Entries.Any(e => e.Exception is HttpRequestException));
+        await Wait.Until(() => logs.Entries.Any(e => e.Exception is HttpRequestException));
 
         Assert.Empty(connection.Sent);
         Assert.Equal(LogLevel.Debug, logs.Entries.Single(e => e.Exception is HttpRequestException).Level);
@@ -151,7 +151,7 @@ public class SessionStartTests
         await StartStore(provider);
         var connection = await viewer.FirstConnection.WaitAsync(Timeout, Ct);
 
-        await WaitUntil(() => logs.Entries.Any(e => e.Level == LogLevel.Warning));
+        await Wait.Until(() => logs.Entries.Any(e => e.Level == LogLevel.Warning));
 
         Assert.Empty(connection.Sent);
         Assert.IsType<InvalidOperationException>(logs.Entries.Single(e => e.Level == LogLevel.Warning).Exception);
@@ -221,17 +221,6 @@ public class SessionStartTests
 
         Assert.Contains(services, d =>
             d.ServiceType == typeof(IViewerConnectionFactory) && d.ImplementationType == typeof(SignalRViewerConnectionFactory));
-    }
-
-    private static async Task WaitUntil(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + Timeout;
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-                throw new TimeoutException("Condition was not met in time.");
-            await Task.Delay(10, Ct);
-        }
     }
 }
 

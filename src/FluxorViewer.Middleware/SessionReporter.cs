@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Fluxor;
 using FluxorViewer.Protocol;
 using Microsoft.Extensions.Logging;
@@ -5,13 +6,23 @@ using Microsoft.Extensions.Logging;
 namespace FluxorViewer.Middleware;
 
 /// <summary>
-/// Reports one store to the Viewer as a Session: connects in the background and sends a Snapshot
-/// once connected. Never throws into the Host app.
+/// Reports one store to the Viewer as a Session: tracks Feature state references per Action, connects in the
+/// background, sends a Snapshot once connected and then each recorded Action. Never throws into the Host app.
 /// </summary>
 internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnectionFactory connectionFactory, ILogger logger)
     : IAsyncDisposable
 {
     private readonly CancellationTokenSource stopping = new();
+    private readonly Channel<PendingAction> queue = Channel.CreateUnbounded<PendingAction>(new() { SingleReader = true });
+
+    // Guards the tracked state below. AfterDispatch calls are already serialised by Fluxor; the lock is for the
+    // sender, which copies the tracked state for a Snapshot from another thread.
+    private readonly Lock gate = new();
+    private IFeature[] features = [];
+    private object?[] states = [];
+    private long lastSequence;
+    private bool connected;
+
     private Task run = Task.CompletedTask;
     private IViewerConnection? connection;
     private int disposed;
@@ -27,10 +38,50 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
             OperatingSystem.IsBrowser() ? Runtime.WebAssembly : Runtime.Server,
             DateTimeOffset.UtcNow);
 
-        run = RunAsync(store, Session, stopping.Token);
+        lock (gate)
+        {
+            features = store.Features.Values.ToArray();
+            states = features.Select(f => f.GetState()).ToArray();
+        }
+
+        run = RunAsync(Session, stopping.Token);
     }
 
-    private async Task RunAsync(IStore store, SessionInfo session, CancellationToken cancellationToken)
+    /// <summary>
+    /// Called after reducers have run: assigns the next Sequence, finds the Changed Features by reference and,
+    /// while connected, queues the Action. Doesn't serialise.
+    /// </summary>
+    public void Record(object action)
+    {
+        try
+        {
+            var timestamp = DateTimeOffset.UtcNow;
+            lock (gate)
+            {
+                // Advance first: if anything below throws, the Viewer sees an honest gap.
+                var sequence = ++lastSequence;
+
+                List<TrackedState>? changed = null;
+                for (var i = 0; i < features.Length; i++)
+                {
+                    var state = features[i].GetState();
+                    if (ReferenceEquals(state, states[i]))
+                        continue;
+                    states[i] = state;
+                    (changed ??= []).Add(new TrackedState(features[i], state));
+                }
+
+                if (connected)
+                    queue.Writer.TryWrite(new PendingAction(sequence, timestamp, action, changed ?? []));
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "FluxorViewer: could not record {ActionType}.", action.GetType());
+        }
+    }
+
+    private async Task RunAsync(SessionInfo session, CancellationToken cancellationToken)
     {
         try
         {
@@ -50,11 +101,11 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
         Snapshot snapshot;
         try
         {
-            // Captured now, not at Start, so it reflects anything dispatched while connecting.
-            snapshot = SnapshotCapture.Capture(store, session, lastSequence: 0, droppedCount: 0);
+            snapshot = CaptureSnapshot(session);
         }
         catch (Exception ex)
         {
+            Disconnect();
             logger.LogWarning(ex, "FluxorViewer: could not serialise the Snapshot for Session {SessionId}.", session.SessionId);
             return;
         }
@@ -62,14 +113,60 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
         try
         {
             await connection.SendSnapshotAsync(snapshot, cancellationToken);
+            await foreach (var pending in queue.Reader.ReadAllAsync(cancellationToken))
+            {
+                if (TrySerialise(session, pending) is { } message)
+                    await connection.SendActionsAsync([message], cancellationToken);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "FluxorViewer: could not send the Snapshot for Session {SessionId}.", session.SessionId);
+            // MW-6 adds reconnecting; until then the Session stops reporting.
+            Disconnect();
+            logger.LogDebug(ex, "FluxorViewer: lost the connection to the Viewer for Session {SessionId}.", session.SessionId);
         }
+    }
+
+    /// <summary>
+    /// Copies the tracked states and Sequence together and starts queueing, so the Snapshot matches the Actions
+    /// that follow it exactly. Serialises outside the lock; the states are immutable.
+    /// </summary>
+    private Snapshot CaptureSnapshot(SessionInfo session)
+    {
+        long sequence;
+        TrackedState[] tracked;
+        lock (gate)
+        {
+            sequence = lastSequence;
+            tracked = features.Select((f, i) => new TrackedState(f, states[i])).ToArray();
+            connected = true;
+        }
+
+        return Messages.Snapshot(session, sequence, droppedCount: 0, tracked);
+    }
+
+    private ActionRecorded? TrySerialise(SessionInfo session, PendingAction pending)
+    {
+        try
+        {
+            return Messages.ActionRecorded(session, pending);
+        }
+        catch (Exception ex)
+        {
+            // MW-4 replaces this with a {"$error": …} placeholder.
+            logger.LogWarning(ex, "FluxorViewer: could not serialise Action {Sequence} ({ActionType}); skipped.",
+                pending.Sequence, pending.Action.GetType());
+            return null;
+        }
+    }
+
+    private void Disconnect()
+    {
+        lock (gate)
+            connected = false;
     }
 
     public async ValueTask DisposeAsync()
@@ -77,6 +174,8 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
         if (Interlocked.Exchange(ref disposed, 1) == 1)
             return;
 
+        Disconnect();
+        queue.Writer.TryComplete();
         await stopping.CancelAsync();
         try
         {

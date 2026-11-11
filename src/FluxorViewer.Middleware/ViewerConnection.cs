@@ -15,6 +15,8 @@ internal interface IViewerConnection : IAsyncDisposable
     Task StartAsync(CancellationToken cancellationToken);
 
     Task SendSnapshotAsync(Snapshot snapshot, CancellationToken cancellationToken);
+
+    Task SendActionsAsync(IReadOnlyList<ActionRecorded> actions, CancellationToken cancellationToken);
 }
 
 internal sealed class SignalRViewerConnectionFactory : IViewerConnectionFactory
@@ -35,6 +37,9 @@ internal sealed class SignalRViewerConnectionFactory : IViewerConnectionFactory
 
         public Task SendSnapshotAsync(Snapshot snapshot, CancellationToken cancellationToken) =>
             hub.InvokeAsync("Snapshot", snapshot, cancellationToken);
+
+        public Task SendActionsAsync(IReadOnlyList<ActionRecorded> actions, CancellationToken cancellationToken) =>
+            hub.InvokeAsync("Actions", actions.ToArray(), cancellationToken);
 
         public ValueTask DisposeAsync() => hub.DisposeAsync();
     }

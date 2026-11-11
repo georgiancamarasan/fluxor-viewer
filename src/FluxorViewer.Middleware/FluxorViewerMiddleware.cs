@@ -25,6 +25,8 @@ internal sealed class FluxorViewerMiddleware(
         return Task.CompletedTask;
     }
 
+    public override void AfterDispatch(object action) => Reporter.Record(action);
+
     public ValueTask DisposeAsync() => Reporter.DisposeAsync();
 
     // A synchronous scope dispose can't wait (and mustn't block in WebAssembly), so shut down in the background.
