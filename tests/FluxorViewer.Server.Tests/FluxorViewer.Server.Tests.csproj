@@ -1,11 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Fluxor" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FluxorViewer.Server\FluxorViewer.Server.csproj" />
+    <ProjectReference Include="..\..\src\FluxorViewer.Middleware\FluxorViewer.Middleware.csproj" />
   </ItemGroup>
 
 </Project>

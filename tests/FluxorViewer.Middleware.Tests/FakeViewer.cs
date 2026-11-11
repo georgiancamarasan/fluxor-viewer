@@ -15,6 +15,9 @@ internal sealed class FakeViewer : IViewerConnectionFactory
 
     public Exception? ConnectFailure { get; init; }
 
+    /// <summary>When set, sending a Snapshot throws this.</summary>
+    public Exception? SnapshotFailure { get; set; }
+
     /// <summary>When set, sending Actions throws this.</summary>
     public Exception? ActionsFailure { get; set; }
 
@@ -71,6 +74,8 @@ internal sealed class FakeViewer : IViewerConnectionFactory
 
         public Task SendSnapshotAsync(Snapshot snapshot, CancellationToken cancellationToken)
         {
+            if (viewer.SnapshotFailure is { } failure)
+                return Task.FromException(failure);
             Sent.Enqueue(snapshot);
             firstMessage.TrySetResult(snapshot);
             return Task.CompletedTask;

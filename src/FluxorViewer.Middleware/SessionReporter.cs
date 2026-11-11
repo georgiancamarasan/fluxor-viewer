@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Fluxor;
 using FluxorViewer.Protocol;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 
 namespace FluxorViewer.Middleware;
@@ -138,6 +139,12 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+        }
+        catch (HubException ex)
+        {
+            // The Viewer refused us (e.g. protocol version mismatch): the developer needs to see why.
+            Disconnect();
+            logger.LogWarning("FluxorViewer: the Viewer rejected Session {SessionId}: {Reason}", session.SessionId, ex.Message);
         }
         catch (Exception ex)
         {

@@ -143,6 +143,34 @@ public class SessionStartTests
     }
 
     [Fact]
+    public async Task A_Viewer_rejection_is_logged_at_warning_with_its_reason()
+    {
+        var logs = new CapturingLoggerFactory();
+        var viewer = new FakeViewer { SnapshotFailure = new Microsoft.AspNetCore.SignalR.HubException("FluxorViewer: protocol version 2.0 is not compatible") };
+        await using var provider = Provider(viewer, logs);
+        await StartStore(provider);
+
+        await Wait.Until(() => logs.Entries.Any(e => e.Level == LogLevel.Warning));
+
+        var warning = Assert.Single(logs.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains("protocol version 2.0 is not compatible", warning.Message);
+    }
+
+    [Fact]
+    public async Task A_network_failure_sending_the_Snapshot_stays_at_debug()
+    {
+        var logs = new CapturingLoggerFactory();
+        var viewer = new FakeViewer { SnapshotFailure = new HttpRequestException("Reset") };
+        await using var provider = Provider(viewer, logs);
+        await StartStore(provider);
+
+        await Wait.Until(() => logs.Entries.Any(e => e.Exception is HttpRequestException));
+
+        Assert.Equal(LogLevel.Debug, logs.Entries.Single(e => e.Exception is HttpRequestException).Level);
+        Assert.DoesNotContain(logs.Entries, e => e.Level >= LogLevel.Warning);
+    }
+
+    [Fact]
     public async Task A_Snapshot_that_fails_to_serialise_is_logged_and_not_sent()
     {
         var logs = new CapturingLoggerFactory();

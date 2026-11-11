@@ -71,7 +71,7 @@ When `Enabled` is false the middleware does nothing: no connection, no serialisa
 
 ## Protocol
 
-Every message carries `ProtocolVersion`. The Viewer rejects incompatible major versions with a clear log line (and the middleware logs a warning once).
+Each Snapshot carries `ProtocolVersion`. The Viewer rejects a Snapshot with a different major version (logged once per Session) and the middleware logs the rejection as a warning. Actions don't carry the version: they're only accepted after a compatible Snapshot on the same connection.
 
 ```text
 Snapshot
@@ -82,10 +82,10 @@ Snapshot
 ActionRecorded
   SessionId, Sequence, Timestamp,
   ActionType, ActionJson,
-  ChangedFeatures: [ { Name, StateJson } ]
+  ChangedFeatures: [ { Name, StateType, StateJson } ]
 ```
 
-Hub methods on `/hub/ingest`: `Snapshot(Snapshot)` and `Actions(ActionRecorded[])`. One hub connection per Session. CORS allows any `http(s)://localhost:*` origin by default so WebAssembly apps can connect.
+Hub methods on `/hub/ingest`: `Snapshot(Snapshot)` and `Actions(ActionRecorded[])`. One hub connection per Session: the first accepted Snapshot binds the connection to its `SessionId`, and later Snapshots and Actions on it must carry the same one. Rejections are `HubException`s and leave the connection open. CORS allows `localhost`, `127.0.0.1` and `[::1]` origins on any port so WebAssembly apps can connect. The maximum message size is 32 MB (SignalR's default of 32 KB is too small for real Snapshots).
 
 Why changed-Features-only plus Snapshots instead of full state every time: see [ADR 0002](adr/0002-changed-feature-deltas-with-snapshot-resync.md).
 
