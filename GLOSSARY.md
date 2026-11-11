@@ -12,6 +12,14 @@ _Avoid_: Client, target, app (on its own)
 One running instance of a Fluxor store inside a host app (e.g. one Blazor Server circuit, or one browser tab running WebAssembly), as seen by the viewer.
 _Avoid_: Store, connection, client, app
 
+**Session status**:
+Whether the Viewer currently has a connection for a Session: *connected* or *disconnected*. Disconnected doesn't mean the Session has ended; it may reconnect, and the Viewer can't tell the difference.
+_Avoid_: Live, online, active, dead
+
+**Clear**:
+The developer discarding a Session's history. A disconnected Session is removed; a connected Session keeps its current Feature states as the new starting point and goes on recording.
+_Avoid_: Reset, delete, purge
+
 **Runtime**:
 Where a Session's store executes: on the server (in a Blazor Server circuit) or in the browser (WebAssembly).
 _Avoid_: Render mode, host, platform

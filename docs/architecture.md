@@ -94,7 +94,10 @@ Why changed-Features-only plus Snapshots instead of full state every time: see [
 ### Session registry and history
 
 - `SessionRegistry` holds every Session seen since the Viewer started: info (app name, runtime, started-at, short id), connection status, and its history. In memory only.
-- A Session is *connected* while its hub connection is up; on disconnect it's kept and marked *disconnected* until the developer clears it.
+- The first Snapshot with a new `SessionId` creates the Session; its info comes from that Snapshot and isn't changed by later ones. The short id (first 4 hex chars) is a display label only and may collide.
+- A Session is *connected* while its current hub connection is up; on disconnect it's kept and marked *disconnected*. A reconnect's Snapshot moves the Session to the new connection: a late close from the old one doesn't disconnect it, and Actions still arriving on the old one are dropped (the new Snapshot already covers them).
+- **Clear** removes a disconnected Session. A connected Session keeps its current Feature states and last Sequence as its new starting point (in place of a Snapshot) and goes on recording, since the Viewer can't ask the app for a fresh Snapshot.
+- Sessions are listed in the order the Viewer first saw them. One lock guards the registry; readers get copies.
 - History is an ordered list of entries, capped at N (default 1000, configurable) as a ring buffer:
   - **ActionEntry**: sequence, timestamp, type, payload JSON, set of changed Feature names, and a map *Feature → state JSON after this Action*.
   - **ResyncEntry**: written when a Snapshot arrives for a Session that already has history and either `DroppedCount > 0` or `LastSequence` doesn't follow the last received sequence. Shows how many Actions were lost.
