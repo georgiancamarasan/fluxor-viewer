@@ -6,9 +6,12 @@ namespace AutoSample.Client.Store;
 public static class SampleFluxor
 {
     /// <summary>
-    /// Registers Fluxor with the sample's Features. Called from both the Server and the
-    /// WebAssembly host so the two stores are identical.
+    /// Registers Fluxor with the sample's Features and reports to the Fluxor Viewer at its default address. Called
+    /// from both the Server and the WebAssembly host so the two stores are identical.
     /// </summary>
-    public static IServiceCollection AddSampleFluxor(this IServiceCollection services) =>
-        services.AddFluxor(o => o.ScanAssemblies(typeof(SampleFluxor).Assembly));
+    /// <param name="viewerEnabled">Whether to report to the Viewer; each host passes its own IsDevelopment().</param>
+    public static IServiceCollection AddSampleFluxor(this IServiceCollection services, bool viewerEnabled) =>
+        services.AddFluxor(o => o
+            .ScanAssemblies(typeof(SampleFluxor).Assembly)
+            .UseFluxorViewer(v => v.Enabled = viewerEnabled));
 }

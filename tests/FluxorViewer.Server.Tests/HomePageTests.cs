@@ -33,7 +33,10 @@ public class HomePageTests : BunitContext
         var snippet = waiting.QuerySelector("pre")!.TextContent;
         Assert.Contains("dotnet add package FluxorViewer.Middleware", snippet);
         Assert.Contains("v.Enabled = builder.Environment.IsDevelopment();", snippet);
-        Assert.Contains("builder.HostEnvironment", snippet);
+        Assert.DoesNotContain("ScanAssemblies", snippet); // a second AddFluxor would register a second store
+        Assert.Contains("existing AddFluxor call", waiting.TextContent);
+        Assert.Contains(".Client project", waiting.TextContent);
+        Assert.Contains("builder.HostEnvironment", waiting.TextContent);
         Assert.Contains("""v.ServerUrl = "http://localhost";""", snippet); // bUnit's base URI
     }
 

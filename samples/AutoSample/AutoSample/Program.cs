@@ -8,7 +8,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddInteractiveWebAssemblyComponents();
 
-builder.Services.AddSampleFluxor();
+builder.Services.AddSampleFluxor(viewerEnabled: builder.Environment.IsDevelopment());
 
 var app = builder.Build();
 
