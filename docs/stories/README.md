@@ -8,6 +8,6 @@ Stories live as issues in Gitea: <http://git.server.rsp:32770/georgian/fluxor-vi
 
 ```sh
 tea issues ls                                  # open stories
-tea issues ls --milestone "2 · End-to-end slice"
+tea issues ls -m "2 · End-to-end slice"         
 tea issues ls --state closed                   # done
 ```
