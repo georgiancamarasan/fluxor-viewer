@@ -32,6 +32,10 @@ _Avoid_: Store, slice, module
 An object dispatched to a Fluxor store, as recorded in a Session's history.
 _Avoid_: Event, message, command
 
+**History**:
+The ordered record the Viewer keeps of a Session's Actions and its Resyncs, each with the Feature states after it.
+_Avoid_: Log, timeline, journal
+
 **Sequence**:
 The position of an Action in its Session's history, counting from 1; a gap means Actions were lost.
 _Avoid_: Index, id, counter

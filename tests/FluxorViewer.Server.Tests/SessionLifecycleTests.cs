@@ -74,7 +74,6 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
         Assert.Equal(SessionStatus.Connected, session.Status);
         Assert.Equal("MyApp", session.AppName);
         Assert.Equal(Runtime.Server, session.Runtime);
-        Assert.Equal(2, session.Snapshots.Count);
         Assert.Single(viewer.Registry.GetSessions(), s => s.SessionId == sessionId);
     }
 
@@ -115,8 +114,8 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
         await using var again = await viewer.ConnectAsync();
         await again.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 1), Ct);
         var session = Session(sessionId);
-        Assert.Single(session.Snapshots);
-        Assert.Empty(session.Actions);
+        Assert.Empty(session.History);
+        Assert.Equal(1, session.LastSequence);
     }
 
     [Fact]
@@ -131,17 +130,16 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
 
         var cleared = Session(sessionId);
         Assert.Equal(SessionStatus.Connected, cleared.Status);
-        Assert.Empty(cleared.Actions);
-        var startingPoint = Assert.Single(cleared.Snapshots);
-        Assert.Equal(2, startingPoint.LastSequence);
-        Assert.Equal(0, startingPoint.DroppedCount);
-        Assert.Equal(
-            [("Counter", """{"Count":2}"""), ("Weather", """{"Loading":false}""")],
-            startingPoint.Features.Select(f => (f.Name, f.StateJson)));
+        Assert.Empty(cleared.History);
+        Assert.Equal(2, cleared.LastSequence);
+        Assert.Equal("""{"Count":2}""", cleared.Current["Counter"].StateJson);
+        Assert.Equal("""{"Loading":false}""", cleared.Current["Weather"].StateJson);
 
         await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 3) }, Ct);
 
-        Assert.Equal([3L], Session(sessionId).Actions.Select(a => a.Sequence));
+        var next = Assert.Single(Session(sessionId).Actions);
+        Assert.Equal(3, next.Sequence);
+        Assert.Equal("""{"Count":2}""", next.Before["Counter"].StateJson);
     }
 
     [Fact]
@@ -212,13 +210,14 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
             {
                 Assert.Equal(SessionStatus.Connected, session.Status);
                 Assert.Equal(Enumerable.Range(1, 2 * batches).Select(n => (long)n), session.Actions.Select(a => a.Sequence));
-                Assert.Equal(2, session.Snapshots.Count);
+                Assert.Equal(2 * batches, session.LastSequence);
             }
             else
             {
                 // Cleared after its last batch, while still connected.
-                Assert.Empty(session.Actions);
-                Assert.Equal(2 * batches, Assert.Single(session.Snapshots).LastSequence);
+                Assert.Empty(session.History);
+                Assert.Equal(2 * batches, session.LastSequence);
+                Assert.Equal($$"""{"Count":{{2 * batches}}}""", session.Current["Counter"].StateJson);
             }
         }
     }

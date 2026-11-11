@@ -33,11 +33,11 @@ public class EndToEndTests(Viewer viewer) : IClassFixture<Viewer>
         var session = viewer.Registry.Find(sessionId)!;
 
         Assert.Equal(Runtime.Server, session.Runtime);
-        var counter = Assert.Single(Assert.Single(session.Snapshots).Features);
+        var counter = Assert.Single(session.Actions.First().Before.Values);
         Assert.Equal("Counter", counter.Name);
         Assert.Equal(typeof(CounterState).FullName, counter.StateType);
         var increments = session.Actions.Where(a => a.ActionType == typeof(IncrementAction).FullName).ToList();
-        Assert.Equal([1, 2], increments.Select(a => JsonDocument.Parse(a.ChangedFeatures.Single().StateJson).RootElement.GetProperty("Count").GetInt32()));
+        Assert.Equal([1, 2], increments.Select(a => JsonDocument.Parse(a.After["Counter"].StateJson).RootElement.GetProperty("Count").GetInt32()));
         Assert.Equal(increments[0].Sequence + 1, increments[1].Sequence);
 
         await provider.DisposeAsync();

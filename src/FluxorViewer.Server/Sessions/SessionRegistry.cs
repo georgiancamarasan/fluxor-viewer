@@ -1,10 +1,11 @@
+using System.Collections.Frozen;
+using System.Collections.Immutable;
 using FluxorViewer.Protocol;
 
 namespace FluxorViewer.Server.Sessions;
 
 /// <summary>
-/// Every Session seen since the Viewer started, with its status and what it has reported, kept in memory.
-/// IN-4 replaces raw storage with reconstructed Feature state.
+/// Every Session seen since the Viewer started, with its status and History, kept in memory.
 /// </summary>
 /// <remarks>
 /// One lock guards everything: hub calls from many Sessions, closes and Clears are serialised, and readers get copies.
@@ -22,8 +23,10 @@ public sealed class SessionRegistry : ISessionRegistry
         {
             if (!sessions.TryGetValue(snapshot.SessionId, out var session))
                 sessions[snapshot.SessionId] = session = new Entry(snapshot, ++seen);
-            session.Snapshots.Add(snapshot);
-            session.ActionsAtLatestSnapshot = session.Actions.Count;
+
+            // IN-5 adds a Resync to the History when Actions were lost; until then the Snapshot just becomes current.
+            session.Current = FeatureMap.From(snapshot.Features);
+            session.LastSequence = snapshot.LastSequence;
             session.ConnectionId = connectionId;
             connections[connectionId] = snapshot.SessionId;
         }
@@ -34,8 +37,10 @@ public sealed class SessionRegistry : ISessionRegistry
         lock (gate)
         {
             // Actions from a connection the Session has moved away from are already covered by the newer Snapshot.
-            if (Current(connectionId) is { } session)
-                session.Actions.AddRange(actions);
+            if (Current(connectionId) is not { } session)
+                return;
+            foreach (var action in actions)
+                session.Record(action);
         }
     }
 
@@ -51,7 +56,7 @@ public sealed class SessionRegistry : ISessionRegistry
     }
 
     /// <summary>
-    /// Discards a Session's history. A disconnected Session is removed; a connected one keeps its current Feature
+    /// Discards a Session's History. A disconnected Session is removed; a connected one keeps its current Feature
     /// states and last Sequence as its new starting point and goes on recording. Unknown Sessions are ignored.
     /// </summary>
     public void Clear(Guid sessionId)
@@ -61,16 +66,9 @@ public sealed class SessionRegistry : ISessionRegistry
             if (!sessions.TryGetValue(sessionId, out var session))
                 return;
             if (session.ConnectionId is null)
-            {
                 sessions.Remove(sessionId);
-                return;
-            }
-
-            var startingPoint = session.CurrentState();
-            session.Snapshots.Clear();
-            session.Actions.Clear();
-            session.Snapshots.Add(startingPoint);
-            session.ActionsAtLatestSnapshot = 0;
+            else
+                session.History.Clear();
         }
     }
 
@@ -99,30 +97,40 @@ public sealed class SessionRegistry : ISessionRegistry
     {
         public long Seen { get; } = seen;
         public Snapshot First { get; } = first;
-        public List<Snapshot> Snapshots { get; } = [];
-        public List<ActionRecorded> Actions { get; } = [];
-        public int ActionsAtLatestSnapshot { get; set; }
+        public List<HistoryEntry> History { get; } = [];
+        public ImmutableDictionary<string, FeatureState> Current { get; set; } = FeatureMap.Empty;
+        public long LastSequence { get; set; }
         public string? ConnectionId { get; set; }
 
-        /// <summary>The latest Snapshot with the Changed Features of every Action after it applied.</summary>
-        public Snapshot CurrentState()
+        /// <summary>Appends the Action with the state before it and after it; only its Changed Features are new.</summary>
+        public void Record(ActionRecorded action)
         {
-            var latest = Snapshots[^1];
-            var features = latest.Features.ToDictionary(f => f.Name);
-            var lastSequence = latest.LastSequence;
-            foreach (var action in Actions.Skip(ActionsAtLatestSnapshot).Where(a => a.Sequence > latest.LastSequence))
-            {
-                foreach (var changed in action.ChangedFeatures)
-                    features[changed.Name] = changed;
-                lastSequence = Math.Max(lastSequence, action.Sequence);
-            }
-
-            return latest with { LastSequence = lastSequence, DroppedCount = 0, Features = [.. features.Values] };
+            var before = Current;
+            var after = before.SetItems(action.ChangedFeatures.Select(f => KeyValuePair.Create(f.Name, f)));
+            History.Add(new ActionEntry(
+                action.Sequence,
+                action.Timestamp,
+                action.ActionType,
+                action.ActionJson,
+                action.ChangedFeatures.Select(f => f.Name).ToFrozenSet(),
+                before,
+                after));
+            Current = after;
+            LastSequence = action.Sequence;
         }
 
         public ReceivedSession ToView() => new(
-            First.SessionId, First.AppName, First.Runtime, First.StartedAt, ConnectionId, [.. Snapshots], [.. Actions]);
+            First.SessionId, First.AppName, First.Runtime, First.StartedAt, ConnectionId, [.. History], Current, LastSequence);
     }
+}
+
+/// <summary>Feature states keyed by Feature name. Maps are immutable and share unchanged states.</summary>
+internal static class FeatureMap
+{
+    public static readonly ImmutableDictionary<string, FeatureState> Empty = ImmutableDictionary<string, FeatureState>.Empty;
+
+    public static ImmutableDictionary<string, FeatureState> From(IEnumerable<FeatureState> features) =>
+        Empty.SetItems(features.Select(f => KeyValuePair.Create(f.Name, f)));
 }
 
 /// <summary>Whether the Viewer currently has a connection for a Session. Disconnected Sessions may still reconnect.</summary>
@@ -132,20 +140,39 @@ public enum SessionStatus
     Disconnected,
 }
 
+/// <summary>One point in a Session's History, with the Feature states after it.</summary>
+public abstract record HistoryEntry(ImmutableDictionary<string, FeatureState> After);
+
+/// <summary>An Action in the History.</summary>
+/// <param name="ChangedFeatures">Names of the Features whose state this Action replaced.</param>
+/// <param name="Before">Feature states before this Action. Unchanged Features share their instances with <paramref name="After"/>.</param>
+public sealed record ActionEntry(
+    long Sequence,
+    DateTimeOffset Timestamp,
+    string ActionType,
+    string ActionJson,
+    IReadOnlySet<string> ChangedFeatures,
+    ImmutableDictionary<string, FeatureState> Before,
+    ImmutableDictionary<string, FeatureState> After) : HistoryEntry(After);
+
 /// <summary>A Session as received so far.</summary>
 /// <param name="ConnectionId">The hub connection currently reporting it, or null once that closed.</param>
-/// <param name="Snapshots">Snapshots received; after a Clear, just the starting point the Clear left.</param>
+/// <param name="Current">Feature states after the latest Action or Snapshot; kept when the History is cleared.</param>
+/// <param name="LastSequence">The Sequence of the latest Action or Snapshot received.</param>
 public sealed record ReceivedSession(
     Guid SessionId,
     string AppName,
     Runtime Runtime,
     DateTimeOffset StartedAt,
     string? ConnectionId,
-    IReadOnlyList<Snapshot> Snapshots,
-    IReadOnlyList<ActionRecorded> Actions)
+    IReadOnlyList<HistoryEntry> History,
+    ImmutableDictionary<string, FeatureState> Current,
+    long LastSequence)
 {
     /// <summary>The first four hex characters of the SessionId; a display label only, and not unique.</summary>
     public string ShortId => SessionId.ToString("N")[..4];
 
     public SessionStatus Status => ConnectionId is null ? SessionStatus.Disconnected : SessionStatus.Connected;
+
+    public IEnumerable<ActionEntry> Actions => History.OfType<ActionEntry>();
 }

@@ -41,9 +41,9 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         Assert.Equal("TestApp", session.AppName);
         Assert.Equal(Runtime.WebAssembly, session.Runtime);
         Assert.Equal(connection.ConnectionId, session.ConnectionId);
-        Assert.Equal(snapshot, Assert.Single(session.Snapshots), SnapshotComparer.Instance);
         Assert.Equal([1L, 2L, 3L], session.Actions.Select(a => a.Sequence));
-        Assert.Equal("""{"Count":3}""", session.Actions[2].ChangedFeatures[0].StateJson);
+        Assert.Equal("""{"Count":0}""", session.Actions.First().Before["Counter"].StateJson);
+        Assert.Equal("""{"Count":3}""", session.Current["Counter"].StateJson);
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
         await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 40, DroppedCount = 12 }, Ct);
 
-        Assert.Equal([0L, 40L], viewer.Registry.Find(sessionId)!.Snapshots.Select(s => s.LastSequence));
+        Assert.Equal(40, viewer.Registry.Find(sessionId)!.LastSequence);
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
 
         await connection.InvokeAsync("Snapshot", snapshot, Ct);
 
-        Assert.Equal(bigState, viewer.Registry.Find(snapshot.SessionId)!.Snapshots[0].Features[0].StateJson);
+        Assert.Equal(bigState, viewer.Registry.Find(snapshot.SessionId)!.Current["Big"].StateJson);
     }
 
     [Theory]
@@ -210,17 +210,4 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     [Fact]
     public void Maximum_message_size_is_32_MB() =>
         Assert.Equal(32 * 1024 * 1024, IngestLimits.MaximumMessageSize);
-
-    /// <summary>Records holding lists compare by reference; compare Snapshots by content.</summary>
-    private sealed class SnapshotComparer : IEqualityComparer<Snapshot>
-    {
-        public static readonly SnapshotComparer Instance = new();
-
-        public bool Equals(Snapshot? x, Snapshot? y) =>
-            x is not null && y is not null &&
-            x with { Features = [] } == y with { Features = [] } &&
-            x.Features.SequenceEqual(y.Features);
-
-        public int GetHashCode(Snapshot obj) => obj.SessionId.GetHashCode();
-    }
 }

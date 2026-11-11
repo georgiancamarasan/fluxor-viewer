@@ -99,9 +99,9 @@ Why changed-Features-only plus Snapshots instead of full state every time: see [
 - **Clear** removes a disconnected Session. A connected Session keeps its current Feature states and last Sequence as its new starting point (in place of a Snapshot) and goes on recording, since the Viewer can't ask the app for a fresh Snapshot.
 - Sessions are listed in the order the Viewer first saw them. One lock guards the registry; readers get copies.
 - History is an ordered list of entries, capped at N (default 1000, configurable) as a ring buffer:
-  - **ActionEntry**: sequence, timestamp, type, payload JSON, set of changed Feature names, and a map *Feature → state JSON after this Action*.
+  - **ActionEntry**: sequence, timestamp, type, payload JSON, set of changed Feature names, and the maps *Feature → state JSON* before and after this Action.
   - **ResyncEntry**: written when a Snapshot arrives for a Session that already has history and either `DroppedCount > 0` or `LastSequence` doesn't follow the last received sequence. Shows how many Actions were lost.
-- State reconstruction: each entry's Feature map starts as the previous entry's map with changed Features replaced. Unchanged Features share the same JSON instance, so per-entry cost is proportional to what changed. A Snapshot replaces the whole map.
+- State reconstruction: each Session has a *current* map (immutable, keyed by Feature name, JSON left unparsed). A Snapshot replaces it. Each Action takes the current map as its *before*, replaces its changed Features to make its *after*, and makes that current. Unchanged Features share the same JSON instance, so per-entry cost is proportional to what changed. Because every entry holds its own before map, evicting old entries or clearing the History never loses the state an entry starts from; Clear keeps the current map.
 - The registry raises in-process change events (`SessionAdded`, `SessionStatusChanged`, `EntriesAppended`, `SessionCleared`) which UI components subscribe to.
 
 ### UI
