@@ -12,6 +12,10 @@ _Avoid_: Client, target, app (on its own)
 One running instance of a Fluxor store inside a host app (e.g. one Blazor Server circuit, or one browser tab running WebAssembly), as seen by the viewer.
 _Avoid_: Store, connection, client, app
 
+**Runtime**:
+Where a Session's store executes: on the server (in a Blazor Server circuit) or in the browser (WebAssembly).
+_Avoid_: Render mode, host, platform
+
 **Feature**:
 A named slice of state registered with Fluxor, with its own state type and reducers; a Session contains many Features.
 _Avoid_: Store, slice, module
