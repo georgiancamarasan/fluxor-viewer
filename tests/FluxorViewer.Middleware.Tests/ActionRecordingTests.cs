@@ -11,58 +11,6 @@ public class ActionRecordingTests
 {
     private static CancellationToken Ct => Wait.Ct;
 
-    private sealed class Harness : IAsyncDisposable
-    {
-        private readonly ServiceProvider provider;
-
-        public Harness(bool connectImmediately = false)
-        {
-            Viewer = new FakeViewer(connectImmediately);
-            var services = new ServiceCollection();
-            services.AddSingleton<IViewerConnectionFactory>(Viewer);
-            services.AddSingleton<ILoggerFactory>(Logs);
-            services.AddFluxor(o => o
-                .ScanTypes(typeof(CounterFeature), typeof(CounterReducers), typeof(ProfileFeature), typeof(ProfileReducers),
-                    typeof(GoEffects), typeof(FlakyFeature))
-                .UseFluxorViewer(v => v.Enabled = true));
-            provider = services.BuildServiceProvider();
-        }
-
-        public FakeViewer Viewer { get; }
-
-        public CapturingLoggerFactory Logs { get; } = new();
-
-        public IDispatcher Dispatcher => provider.GetRequiredService<IDispatcher>();
-
-        public T Get<T>() where T : notnull => provider.GetRequiredService<T>();
-
-        public async Task<FakeViewer.FakeConnection> Start()
-        {
-            await provider.GetRequiredService<IStore>().InitializeAsync();
-            return await Viewer.FirstConnection.WaitAsync(Wait.Timeout, Ct);
-        }
-
-        /// <summary>
-        /// Initialises the store, then lets the connection open and waits for the Snapshot, so later Actions are
-        /// queued. The Snapshot covers StoreInitializedAction.
-        /// </summary>
-        public async Task<(FakeViewer.FakeConnection Connection, Snapshot Snapshot)> StartConnected()
-        {
-            var connection = await Start();
-            Viewer.ConnectGate.TrySetResult();
-            var snapshot = Assert.IsType<Snapshot>(await connection.FirstMessage.WaitAsync(Wait.Timeout, Ct));
-            return (connection, snapshot);
-        }
-
-        public ValueTask DisposeAsync() => provider.DisposeAsync();
-    }
-
-    private static async Task<IReadOnlyList<ActionRecorded>> ActionsSent(FakeViewer.FakeConnection connection, int count)
-    {
-        await Wait.Until(() => connection.Actions.Count >= count);
-        return connection.Actions;
-    }
-
     private static int Count(FeatureState feature) => JsonDocument.Parse(feature.StateJson).RootElement.GetProperty("Count").GetInt32();
 
     [Fact]
@@ -73,7 +21,7 @@ public class ActionRecordingTests
 
         harness.Dispatcher.Dispatch(new IncrementAction());
 
-        var action = Assert.Single(await ActionsSent(connection, 1));
+        var action = Assert.Single(await Harness.ActionsSent(connection, 1));
         Assert.Equal(snapshot.SessionId, action.SessionId);
         Assert.Equal(typeof(IncrementAction).FullName, action.ActionType);
         Assert.Equal("{}", action.ActionJson);
@@ -91,7 +39,7 @@ public class ActionRecordingTests
 
         harness.Dispatcher.Dispatch(new NothingAction());
 
-        var action = Assert.Single(await ActionsSent(connection, 1));
+        var action = Assert.Single(await Harness.ActionsSent(connection, 1));
         Assert.Equal(typeof(NothingAction).FullName, action.ActionType);
         Assert.Empty(action.ChangedFeatures);
     }
@@ -105,7 +53,7 @@ public class ActionRecordingTests
         harness.Dispatcher.Dispatch(new KeepNameAction());
         harness.Dispatcher.Dispatch(new RenameAction("Ada")); // Same value, new instance.
 
-        var actions = await ActionsSent(connection, 2);
+        var actions = await Harness.ActionsSent(connection, 2);
         Assert.Empty(actions[0].ChangedFeatures);
         Assert.Equal("Profile", Assert.Single(actions[1].ChangedFeatures).Name);
     }
@@ -118,7 +66,7 @@ public class ActionRecordingTests
 
         harness.Dispatcher.Dispatch(new GoAction());
 
-        var actions = await ActionsSent(connection, 2);
+        var actions = await Harness.ActionsSent(connection, 2);
         Assert.Equal([typeof(GoAction).FullName, typeof(IncrementAction).FullName], actions.Select(a => a.ActionType));
     }
 
@@ -139,7 +87,7 @@ public class ActionRecordingTests
         await using var harness = new Harness(connectImmediately: true);
         var connection = await harness.Start();
 
-        var action = Assert.Single(await ActionsSent(connection, 1));
+        var action = Assert.Single(await Harness.ActionsSent(connection, 1));
 
         Assert.Equal(0, Assert.IsType<Snapshot>(connection.Sent.First()).LastSequence);
         Assert.Equal("Fluxor.StoreInitializedAction", action.ActionType);
@@ -158,7 +106,7 @@ public class ActionRecordingTests
         var snapshot = Assert.IsType<Snapshot>(await connection.FirstMessage.WaitAsync(Wait.Timeout, Ct));
         for (var i = 0; i < 3; i++)
             harness.Dispatcher.Dispatch(new IncrementAction());
-        var actions = await ActionsSent(connection, 3);
+        var actions = await Harness.ActionsSent(connection, 3);
 
         Assert.Equal(3, snapshot.LastSequence); // StoreInitializedAction + 2 increments, all covered by the Snapshot.
         Assert.Equal(2, Count(Assert.Single(snapshot.Features, f => f.Name == "Counter")));
@@ -177,7 +125,7 @@ public class ActionRecordingTests
         harness.Dispatcher.Dispatch(new IncrementAction());
         var after = DateTimeOffset.UtcNow;
 
-        var action = Assert.Single(await ActionsSent(connection, 1));
+        var action = Assert.Single(await Harness.ActionsSent(connection, 1));
         Assert.InRange(action.Timestamp, before, after);
         Assert.Equal(TimeSpan.Zero, action.Timestamp.Offset);
     }
@@ -190,7 +138,7 @@ public class ActionRecordingTests
 
         harness.Dispatcher.Dispatch(new Items.LoadedAction<Item>([new Item("a")]));
 
-        var action = Assert.Single(await ActionsSent(connection, 1));
+        var action = Assert.Single(await Harness.ActionsSent(connection, 1));
         Assert.Equal("FluxorViewer.Middleware.Tests.Items.LoadedAction<FluxorViewer.Middleware.Tests.Item>", action.ActionType);
     }
 
@@ -203,7 +151,7 @@ public class ActionRecordingTests
         harness.Dispatcher.Dispatch(new ExplodingAction());
         harness.Dispatcher.Dispatch(new IncrementAction());
 
-        var action = Assert.Single(await ActionsSent(connection, 1));
+        var action = Assert.Single(await Harness.ActionsSent(connection, 1));
         Assert.Equal(typeof(IncrementAction).FullName, action.ActionType);
         Assert.Equal(3, action.Sequence); // 2 was skipped, leaving an honest gap.
         var warning = Assert.Single(harness.Logs.Entries, e => e.Level == LogLevel.Warning);
@@ -240,7 +188,7 @@ public class ActionRecordingTests
         flaky.Throw = false;
         harness.Dispatcher.Dispatch(new IncrementAction());
 
-        var action = Assert.Single(await ActionsSent(connection, 1));
+        var action = Assert.Single(await Harness.ActionsSent(connection, 1));
         Assert.Equal(3, action.Sequence); // 2 was lost while recording.
         Assert.Equal(2, Count(Assert.Single(action.ChangedFeatures, f => f.Name == "Counter")));
         var debug = Assert.Single(harness.Logs.Entries, e => e.Exception is FlakyException);

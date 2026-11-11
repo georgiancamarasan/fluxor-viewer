@@ -12,8 +12,13 @@ namespace FluxorViewer.Middleware;
 internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnectionFactory connectionFactory, ILogger logger)
     : IAsyncDisposable
 {
+    internal const int MaxBatchSize = 100;
+
     private readonly CancellationTokenSource stopping = new();
-    private readonly Channel<PendingAction> queue = Channel.CreateUnbounded<PendingAction>(new() { SingleReader = true });
+
+    // Full means "the Viewer can't keep up": AfterDispatch then stops queueing rather than waiting (see Record).
+    private readonly Channel<PendingAction> queue = Channel.CreateBounded<PendingAction>(
+        new BoundedChannelOptions(options.BufferSize) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true, SingleWriter = true });
 
     // Guards the tracked state below. AfterDispatch calls are already serialised by Fluxor; the lock is for the
     // sender, which copies the tracked state for a Snapshot from another thread.
@@ -21,7 +26,9 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
     private IFeature[] features = [];
     private object?[] states = [];
     private long lastSequence;
-    private bool connected;
+    private bool queueing;
+    private bool overflowed;
+    private long droppedCount;
 
     private Task run = Task.CompletedTask;
     private IViewerConnection? connection;
@@ -49,7 +56,8 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
 
     /// <summary>
     /// Called after reducers have run: assigns the next Sequence, finds the Changed Features by reference and,
-    /// while connected, queues the Action. Doesn't serialise.
+    /// while connected, queues the Action. Doesn't serialise or wait; if the queue is full the Action is dropped
+    /// and counted, and the sender follows up with a Snapshot so the Viewer records a Resync.
     /// </summary>
     public void Record(object action)
     {
@@ -71,8 +79,15 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
                     (changed ??= []).Add(new TrackedState(features[i], state));
                 }
 
-                if (connected)
-                    queue.Writer.TryWrite(new PendingAction(sequence, timestamp, action, changed ?? []));
+                if (queueing && !queue.Writer.TryWrite(new PendingAction(sequence, timestamp, action, changed ?? [])))
+                {
+                    // Overflow: stop queueing until the sender has drained the queue and sent a fresh Snapshot.
+                    queueing = false;
+                    overflowed = true;
+                }
+
+                if (overflowed)
+                    droppedCount++;
             }
         }
         catch (Exception ex)
@@ -98,25 +113,27 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
             return;
         }
 
-        Snapshot snapshot;
         try
         {
-            snapshot = CaptureSnapshot(session);
-        }
-        catch (Exception ex)
-        {
-            Disconnect();
-            logger.LogWarning(ex, "FluxorViewer: could not serialise the Snapshot for Session {SessionId}.", session.SessionId);
-            return;
-        }
+            if (!await TrySendSnapshotAsync(connection, session, cancellationToken))
+                return;
 
-        try
-        {
-            await connection.SendSnapshotAsync(snapshot, cancellationToken);
-            await foreach (var pending in queue.Reader.ReadAllAsync(cancellationToken))
+            var batch = new List<ActionRecorded>(MaxBatchSize);
+            while (await queue.Reader.WaitToReadAsync(cancellationToken))
             {
-                if (TrySerialise(session, pending) is { } message)
-                    await connection.SendActionsAsync([message], cancellationToken);
+                batch.Clear();
+                for (var read = 0; read < MaxBatchSize && queue.Reader.TryRead(out var pending); read++)
+                {
+                    if (TrySerialise(session, pending) is { } message)
+                        batch.Add(message);
+                }
+
+                if (batch.Count > 0)
+                    await connection.SendActionsAsync(batch.ToArray(), cancellationToken);
+
+                // Nothing is queued while overflowed, so once drained, resync from a fresh Snapshot.
+                if (queue.Reader.Count == 0 && IsOverflowed() && !await TrySendSnapshotAsync(connection, session, cancellationToken))
+                    return;
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -130,22 +147,50 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
         }
     }
 
+    /// <summary>Captures and sends a Snapshot; false if it couldn't be serialised (the Session then stops).</summary>
+    private async Task<bool> TrySendSnapshotAsync(IViewerConnection connection, SessionInfo session, CancellationToken cancellationToken)
+    {
+        Snapshot snapshot;
+        try
+        {
+            snapshot = CaptureSnapshot(session);
+        }
+        catch (Exception ex)
+        {
+            Disconnect();
+            logger.LogWarning(ex, "FluxorViewer: could not serialise the Snapshot for Session {SessionId}.", session.SessionId);
+            return false;
+        }
+
+        await connection.SendSnapshotAsync(snapshot, cancellationToken);
+        return true;
+    }
+
     /// <summary>
-    /// Copies the tracked states and Sequence together and starts queueing, so the Snapshot matches the Actions
-    /// that follow it exactly. Serialises outside the lock; the states are immutable.
+    /// Copies the tracked states, Sequence and drop count together and (re)starts queueing, so the Snapshot matches
+    /// the Actions that follow it exactly. Serialises outside the lock; the states are immutable.
     /// </summary>
     private Snapshot CaptureSnapshot(SessionInfo session)
     {
-        long sequence;
+        long sequence, dropped;
         TrackedState[] tracked;
         lock (gate)
         {
             sequence = lastSequence;
+            dropped = droppedCount;
             tracked = features.Select((f, i) => new TrackedState(f, states[i])).ToArray();
-            connected = true;
+            droppedCount = 0;
+            overflowed = false;
+            queueing = true;
         }
 
-        return Messages.Snapshot(session, sequence, droppedCount: 0, tracked);
+        return Messages.Snapshot(session, sequence, dropped, tracked);
+    }
+
+    private bool IsOverflowed()
+    {
+        lock (gate)
+            return overflowed;
     }
 
     private ActionRecorded? TrySerialise(SessionInfo session, PendingAction pending)
@@ -166,7 +211,7 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
     private void Disconnect()
     {
         lock (gate)
-            connected = false;
+            queueing = false;
     }
 
     public async ValueTask DisposeAsync()

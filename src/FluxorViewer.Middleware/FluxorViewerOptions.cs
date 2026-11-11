@@ -13,7 +13,10 @@ public sealed class FluxorViewerOptions
     /// <summary>Name the Viewer shows for this Host app. Defaults to the entry assembly name.</summary>
     public string AppName { get; set; } = Assembly.GetEntryAssembly()?.GetName().Name ?? "Unknown";
 
-    /// <summary>Maximum number of messages held while the Viewer is unreachable. Must be at least 1.</summary>
+    /// <summary>
+    /// Maximum number of Actions waiting to be sent; beyond this they're dropped and the Viewer shows a Resync.
+    /// Must be at least 1.
+    /// </summary>
     public int BufferSize { get; set; } = 1000;
 
     /// <summary>

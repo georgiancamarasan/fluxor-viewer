@@ -18,6 +18,16 @@ internal sealed class FakeViewer : IViewerConnectionFactory
     /// <summary>When set, sending Actions throws this.</summary>
     public Exception? ActionsFailure { get; set; }
 
+    /// <summary>Sending Actions waits for this; replace it with an incomplete source to stall the sender.</summary>
+    public TaskCompletionSource ActionsGate { get; set; } = Completed();
+
+    private static TaskCompletionSource Completed()
+    {
+        var gate = new TaskCompletionSource();
+        gate.SetResult();
+        return gate;
+    }
+
     public IReadOnlyCollection<FakeConnection> Connections => connections;
 
     public Task<FakeConnection> FirstConnection => firstConnection.Task;
@@ -66,14 +76,23 @@ internal sealed class FakeViewer : IViewerConnectionFactory
             return Task.CompletedTask;
         }
 
-        public Task SendActionsAsync(IReadOnlyList<ActionRecorded> actions, CancellationToken cancellationToken)
+        private int actionSendsStarted;
+
+        /// <summary>How many Actions sends have begun (including any waiting on <see cref="ActionsGate"/>).</summary>
+        public int ActionSendsStarted => Volatile.Read(ref actionSendsStarted);
+
+        public async Task SendActionsAsync(IReadOnlyList<ActionRecorded> actions, CancellationToken cancellationToken)
         {
+            Interlocked.Increment(ref actionSendsStarted);
+            await viewer.ActionsGate.Task.WaitAsync(cancellationToken);
             if (viewer.ActionsFailure is { } failure)
                 throw failure;
+            Batches.Enqueue(actions);
             foreach (var action in actions)
                 Sent.Enqueue(action);
-            return Task.CompletedTask;
         }
+
+        public ConcurrentQueue<IReadOnlyList<ActionRecorded>> Batches { get; } = new();
 
         public IReadOnlyList<ActionRecorded> Actions => Sent.OfType<ActionRecorded>().ToList();
 
