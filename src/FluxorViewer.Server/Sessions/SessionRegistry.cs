@@ -9,20 +9,36 @@ namespace FluxorViewer.Server.Sessions;
 /// </summary>
 /// <remarks>
 /// One lock guards everything: hub calls from many Sessions, closes and Clears are serialised, and readers get copies.
+/// <see cref="Changed"/> is raised after the lock is released.
 /// </remarks>
-public sealed class SessionRegistry : ISessionRegistry
+public sealed class SessionRegistry(ILogger<SessionRegistry> logger) : ISessionRegistry
 {
     private readonly Lock gate = new();
     private readonly Dictionary<Guid, Entry> sessions = [];
     private readonly Dictionary<string, Guid> connections = [];
     private long seen;
 
+    /// <summary>
+    /// Raised at most once per kind of change per call, after the change is made and outside the lock, synchronously on
+    /// the calling thread (a hub invocation or a Clear). Handlers must not block and must marshal to their own context
+    /// (in Blazor, <c>InvokeAsync</c>). A handler that throws is logged and doesn't affect ingestion or other handlers.
+    /// </summary>
+    public event Action<SessionChange>? Changed;
+
     public void SnapshotReceived(string connectionId, Snapshot snapshot)
     {
+        SessionChange? change = null;
         lock (gate)
         {
             if (!sessions.TryGetValue(snapshot.SessionId, out var session))
+            {
                 sessions[snapshot.SessionId] = session = new Entry(snapshot, ++seen);
+                change = new SessionAdded(snapshot.SessionId);
+            }
+            else if (session.ConnectionId is null)
+            {
+                change = new SessionStatusChanged(snapshot.SessionId, SessionStatus.Connected);
+            }
 
             // IN-5 adds a Resync to the History when Actions were lost; until then the Snapshot just becomes current.
             session.Current = FeatureMap.From(snapshot.Features);
@@ -30,29 +46,40 @@ public sealed class SessionRegistry : ISessionRegistry
             session.ConnectionId = connectionId;
             connections[connectionId] = snapshot.SessionId;
         }
+        Raise(change);
     }
 
     public void ActionsReceived(string connectionId, IReadOnlyList<ActionRecorded> actions)
     {
+        SessionChange? change = null;
         lock (gate)
         {
             // Actions from a connection the Session has moved away from are already covered by the newer Snapshot.
             if (Current(connectionId) is not { } session)
                 return;
+            var before = session.History.Count;
             foreach (var action in actions)
                 session.Record(action);
+            if (session.History.Count > before)
+                change = new EntriesAppended(session.First.SessionId, session.History.Count - before);
         }
+        Raise(change);
     }
 
     public void ConnectionClosed(string connectionId)
     {
+        SessionChange? change = null;
         lock (gate)
         {
             // A late close from a replaced connection leaves the Session connected through the newer one.
             if (Current(connectionId) is { } session)
+            {
                 session.ConnectionId = null;
+                change = new SessionStatusChanged(session.First.SessionId, SessionStatus.Disconnected);
+            }
             connections.Remove(connectionId);
         }
+        Raise(change);
     }
 
     /// <summary>
@@ -70,6 +97,7 @@ public sealed class SessionRegistry : ISessionRegistry
             else
                 session.History.Clear();
         }
+        Raise(new SessionCleared(sessionId));
     }
 
     /// <summary>A copy of every Session in the order the Viewer first saw them, safe to read while ingestion continues.</summary>
@@ -83,6 +111,23 @@ public sealed class SessionRegistry : ISessionRegistry
     {
         lock (gate)
             return sessions.TryGetValue(sessionId, out var session) ? session.ToView() : null;
+    }
+
+    private void Raise(SessionChange? change)
+    {
+        if (change is null || Changed is not { } handlers)
+            return;
+        foreach (var handler in handlers.GetInvocationList().Cast<Action<SessionChange>>())
+        {
+            try
+            {
+                handler(change);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "A {Change} handler threw; ingestion continues.", change.GetType().Name);
+            }
+        }
     }
 
     /// <summary>The Session <paramref name="connectionId"/> reports, if that connection is still the Session's current one.</summary>
