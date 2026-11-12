@@ -176,9 +176,9 @@ internal sealed class SessionReporter(
         while (true)
         {
             // Check again after each Snapshot: Actions may have been dropped meanwhile, making another one due.
-            if (TakeSnapshot() is { } snapshot)
+            if (TakeBaseIfSnapshotDue() is { } baseCopy)
             {
-                if (!await TrySendSnapshotAsync(connection, session, snapshot, cancellationToken))
+                if (!await TrySendSnapshotAsync(connection, session, baseCopy, cancellationToken))
                     return false;
                 continue;
             }
@@ -226,15 +226,15 @@ internal sealed class SessionReporter(
         }
     }
 
-    /// <summary>A Snapshot of the base, if one is due (on connecting, or after a drop).</summary>
-    private DueSnapshot? TakeSnapshot()
+    /// <summary>A copy of the base to send as a Snapshot, if one is due (on connecting, or after a drop).</summary>
+    private BaseCopy? TakeBaseIfSnapshotDue()
     {
         lock (gate)
         {
             if (!snapshotDue)
                 return null;
             snapshotDue = false;
-            return new DueSnapshot(
+            return new BaseCopy(
                 baseSequence, droppedCount, features.Select((f, i) => new TrackedState(f, baseStates[i])).ToArray());
         }
     }
@@ -276,12 +276,12 @@ internal sealed class SessionReporter(
 
     /// <summary>Builds and sends a Snapshot; false if it couldn't be built (the Session then stops).</summary>
     private async Task<bool> TrySendSnapshotAsync(
-        IViewerConnection connection, SessionInfo session, DueSnapshot due, CancellationToken cancellationToken)
+        IViewerConnection connection, SessionInfo session, BaseCopy baseCopy, CancellationToken cancellationToken)
     {
         Snapshot snapshot;
         try
         {
-            snapshot = Messages.Snapshot(session, due.LastSequence, due.DroppedCount, due.Features, json);
+            snapshot = Messages.Snapshot(session, baseCopy.LastSequence, baseCopy.DroppedCount, baseCopy.Features, json);
         }
         catch (Exception ex)
         {
@@ -293,7 +293,7 @@ internal sealed class SessionReporter(
         await connection.SendSnapshotAsync(snapshot, cancellationToken);
         failedAttempts = 0; // Accepted: the next failure starts the backoff over.
         lock (gate)
-            droppedCount -= due.DroppedCount;
+            droppedCount -= baseCopy.DroppedCount;
         return true;
     }
 
@@ -312,8 +312,11 @@ internal sealed class SessionReporter(
         }
     }
 
-    /// <summary>A Snapshot of the base, copied under the lock and serialised outside it (the states are immutable).</summary>
-    private sealed record DueSnapshot(long LastSequence, long DroppedCount, TrackedState[] Features);
+    /// <summary>
+    /// The base and the drops not yet reported, copied under the lock to be serialised into a Snapshot outside it
+    /// (the states are immutable).
+    /// </summary>
+    private sealed record BaseCopy(long LastSequence, long DroppedCount, TrackedState[] Features);
 
     /// <summary>Stops buffering for good: nothing more will be sent.</summary>
     private void Stop()

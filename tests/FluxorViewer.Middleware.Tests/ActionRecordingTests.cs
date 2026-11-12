@@ -4,14 +4,14 @@ using FluxorViewer.Protocol;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
+using static FluxorViewer.Middleware.Tests.CounterJson;
+
 namespace FluxorViewer.Middleware.Tests;
 
 // MW-3: every dispatched Action is reported with only its Changed Features.
 public class ActionRecordingTests
 {
     private static CancellationToken Ct => Wait.Ct;
-
-    private static int Count(FeatureState feature) => JsonDocument.Parse(feature.StateJson).RootElement.GetProperty("Count").GetInt32();
 
     [Fact]
     public async Task Reports_only_the_Features_whose_state_changed()

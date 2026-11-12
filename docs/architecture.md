@@ -65,7 +65,7 @@ When `Enabled` is false the middleware does nothing: no connection, no serialisa
 
 ### Safety guarantees
 
-- `AfterDispatch` never awaits or serialises; it only compares references and appends to the buffer. Any exception inside it is caught.
+- `AfterDispatch` never awaits or serialises; it only compares references, appends to the buffer (on overflow, moving the oldest Action into the base) and signals the sender. Any exception inside it is caught.
 - The buffer is bounded (`BufferSize`), connected or not. When it's full, `AfterDispatch` drops the oldest Action into the base and counts it; the sender then sends a base Snapshot carrying that `DroppedCount` before the remaining Actions, so the Viewer records a Resync instead of silently reconstructing wrong state. `DroppedCount` is reset only once a Snapshot has been sent successfully.
 - A batch leaves the buffer, and the base moves past it, once it's handed to the send; a failed send isn't retried, and the Viewer sees the gap in Sequences. So a Snapshot's `LastSequence` is never less than any Sequence already sent, and the Viewer never rewinds.
 - Serialisation uses System.Text.Json with `ReferenceHandler.IgnoreCycles` and `MaxDepth` (default 64, 1–1024). A back-reference becomes `null`, so in the Viewer a cycle looks the same as a real `null`.

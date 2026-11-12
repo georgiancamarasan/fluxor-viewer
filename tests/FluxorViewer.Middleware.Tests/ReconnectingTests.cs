@@ -1,6 +1,6 @@
-using System.Text.Json;
 using FluxorViewer.Protocol;
 using Microsoft.Extensions.Logging;
+using static FluxorViewer.Middleware.Tests.CounterJson;
 
 namespace FluxorViewer.Middleware.Tests;
 
@@ -23,7 +23,30 @@ public class ReconnectingTests
         Assert.Equal(10, snapshot.DroppedCount);
         Assert.Equal(9, Count(snapshot));
         Assert.Equal(Enumerable.Range(11, 10).Select(i => (long)i), connection.Actions.Select(a => a.Sequence));
-        Assert.Equal(Enumerable.Range(10, 10), connection.Actions.Select(a => CountIn(a.ChangedFeatures)));
+        Assert.Equal(Enumerable.Range(10, 10), connection.Actions.Select(a => Count(a.ChangedFeatures)));
+    }
+
+    [Fact]
+    public async Task Actions_wait_in_the_buffer_through_refused_connects_and_backoff()
+    {
+        var viewer = new FakeViewer { ConnectFailure = new HttpRequestException("Refused") };
+        await using var harness = new Harness(viewer: viewer);
+        await harness.Start();
+
+        harness.Dispatcher.Dispatch(new IncrementAction()); // 2
+        await harness.AdvanceUntil(() => viewer.Connections.Count == 2); // Refused again.
+        harness.Dispatcher.Dispatch(new IncrementAction()); // 3
+        viewer.ConnectFailure = null;
+        await harness.AdvanceUntil(() => viewer.Connections.Count == 3);
+        var connection = viewer.Connections.Last();
+        await Harness.ActionsSent(connection, 2);
+
+        var snapshot = Assert.IsType<Snapshot>(connection.Sent.First());
+        Assert.Equal(0, snapshot.LastSequence);
+        Assert.Equal(0, snapshot.DroppedCount);
+        Assert.Equal([1L, 2L, 3L], connection.Actions.Select(a => a.Sequence));
+        Assert.Equal([1, 2], connection.Actions.Skip(1).Select(a => Count(a.ChangedFeatures)));
+        Assert.Empty(viewer.Connections.Take(2).SelectMany(c => c.Sent));
     }
 
     [Fact]
@@ -189,9 +212,4 @@ public class ReconnectingTests
 
         Assert.Single(viewer.Connections);
     }
-
-    private static int Count(Snapshot snapshot) => CountIn(snapshot.Features);
-
-    private static int CountIn(IEnumerable<FeatureState> features) =>
-        JsonDocument.Parse(features.Single(f => f.Name == "Counter").StateJson).RootElement.GetProperty("Count").GetInt32();
 }

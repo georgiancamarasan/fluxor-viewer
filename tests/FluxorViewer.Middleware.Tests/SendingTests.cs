@@ -3,6 +3,8 @@ using Fluxor;
 using FluxorViewer.Protocol;
 using Microsoft.Extensions.Logging;
 
+using static FluxorViewer.Middleware.Tests.CounterJson;
+
 namespace FluxorViewer.Middleware.Tests;
 
 // MW-5: sending is batched, bounded, and costs dispatch almost nothing.
@@ -149,8 +151,4 @@ public class SendingTests
             dispatcher.Dispatch(new IncrementAction());
         return stopwatch.Elapsed;
     }
-
-    private static int Count(Snapshot snapshot) =>
-        System.Text.Json.JsonDocument.Parse(snapshot.Features.Single(f => f.Name == "Counter").StateJson)
-            .RootElement.GetProperty("Count").GetInt32();
 }
