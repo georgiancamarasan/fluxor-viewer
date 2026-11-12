@@ -23,7 +23,7 @@ public sealed class SessionSelection
     {
         var current = sessions.FirstOrDefault(s => s.SessionId == Selected);
 
-        // Follow a reloaded app: the selected Session disconnected and a new one from the same app and Runtime arrived.
+        // Follow a reloaded Host app: the selected Session disconnected and a new one from the same Host app and Runtime arrived.
         if (current is { Status: SessionStatus.Disconnected }
             && sessions.FirstOrDefault(s => !known.Contains(s.SessionId) && s.AppName == current.AppName && s.Runtime == current.Runtime) is { } successor)
             current = successor;

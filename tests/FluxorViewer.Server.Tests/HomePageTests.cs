@@ -44,7 +44,7 @@ public class HomePageTests : BunitContext
         var page = Render<Home>();
 
         var waiting = page.Find("[data-test=waiting]");
-        Assert.Contains("Waiting for an app to connect…", waiting.TextContent);
+        Assert.Contains("Waiting for a Host app to connect…", waiting.TextContent);
         var snippet = waiting.QuerySelector("pre")!.TextContent;
         Assert.Contains("dotnet add package FluxorViewer.Middleware", snippet);
         Assert.Contains("v.Enabled = builder.Environment.IsDevelopment();", snippet);

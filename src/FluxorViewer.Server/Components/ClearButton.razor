@@ -32,7 +32,7 @@ else
 
     protected override void OnParametersSet()
     {
-        // Another Session was selected (or this one followed a reloaded app), or another Viewer tab cleared it first.
+        // Another Session was selected (or this one followed a reloaded Host app), or another Viewer tab cleared it first.
         if (prompting && (Session?.SessionId != promptedFor || !CanClear))
             prompting = false;
     }
