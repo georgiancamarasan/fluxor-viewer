@@ -40,6 +40,10 @@ _Avoid_: Action name, kind
 What an Action carried: its contents as the Host app sent them.
 _Avoid_: Body, arguments, data, action JSON
 
+**Serialisation error**:
+A Payload or Feature state the Host app couldn't turn into JSON, sent in its place with the reason, so the rest of the History stays intact.
+_Avoid_: Serialization failure, bad state, `$error` (in prose)
+
 **History**:
 The ordered record the Viewer keeps of a Session's Actions and its Resyncs, each with the Feature states after it.
 _Avoid_: Log, timeline, journal

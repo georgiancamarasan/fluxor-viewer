@@ -47,6 +47,7 @@ services.AddFluxor(o => o
         v.ServerUrl  = "http://localhost:5299";          // default
         v.AppName    = "MyApp";                          // default: entry assembly name
         v.BufferSize = 1000;                             // default
+        v.MaxDepth   = 64;                               // default, 1–1024
         v.Enabled    = builder.HostEnvironment.IsDevelopment();
         v.IgnoreAction(a => a is TimerTickAction);
     }));
@@ -65,7 +66,12 @@ When `Enabled` is false the middleware does nothing: no connection, no serialisa
 
 - `AfterDispatch` never awaits or serialises; it only compares references and writes to the channel. Any exception inside it is caught.
 - The channel is bounded (`BufferSize`). When it's full, `AfterDispatch` stops queueing and counts the skipped Actions; once the sender has drained what's queued it sends a fresh Snapshot carrying that `DroppedCount`, so the Viewer records a Resync instead of silently reconstructing wrong state.
-- Serialisation uses System.Text.Json with `ReferenceHandler.IgnoreCycles` and a max depth. Any failure for a single Action or Feature becomes `{"$error": "<message>"}`; nothing throws into the host app.
+- Serialisation uses System.Text.Json with `ReferenceHandler.IgnoreCycles` and `MaxDepth` (default 64, 1–1024). A back-reference becomes `null`, so in the Viewer a cycle looks the same as a real `null`.
+- A **Serialisation error** replaces one value, never a message: a Payload or Feature state that fails to serialise (a converter or getter throwing, an unsupported type, too deep) is sent as exactly `{"$error": "<message>"}` and the rest of the Snapshot or Action goes out as normal.
+  - The message is the exception's own, which for System.Text.Json includes `Path: $.x`, capped at 500 characters. Exceeding `MaxDepth` gets our own message instead ("Nested deeper than MaxDepth (64) at $.a.b…"), since System.Text.Json's suggests a cycle and `ReferenceHandler.Preserve`.
+  - Each failing Action type or Feature is logged at Warning, with the exception, once per process; later failures at Debug.
+  - If building a message fails outside those values, an Action is skipped (the Viewer sees a gap in Sequences) and a Snapshot stops the Session, both logged at Warning.
+- Not covered: a `StackOverflowException` (e.g. a converter or getter recursing forever) or running out of memory, which .NET can't catch. A value too large for the Viewer's message limit is MW-9 (#32).
 - Connection failures retry with backoff forever, silently (logged at Debug).
 - In WebAssembly there are no blocking threads; the sender is a plain async loop.
 
@@ -131,6 +137,7 @@ Why changed-Features-only plus Snapshots instead of full state every time: see [
   - Resync marker rows arrive with IN-5.
 - **Right pane**: payload strip for the selected Action (below); **State** tab = the selected Feature's state *after* the selected Action, or the Session's current state with no Action selected, under a header `StateType · after #N ActionType` (or `· current`); **Diff** tab = before → after rendered with `jsondiffpatch` via JS interop, or "No change to <Feature>".
   - The state is a JSON tree, a recursive Blazor component over `JsonDocument` (shared with the payload strip) that renders a node's children only once it's expanded. Two levels are open by default; arrays over 100 items are split into collapsed ranges of 100. Properties keep the order received and numbers their raw text. The "current" view re-renders as Actions arrive.
+  - The Viewer parses JSON to depth 1024, the most `MaxDepth` allows. JSON it still can't parse shows as "Couldn't read this state: <message>" instead of a tree, so a bad value never throws while rendering.
   - Expand/collapse is stored only as the developer's explicit toggles, keyed by JSON path, per Feature name, for the Viewer tab, so they carry across Actions and Sessions wherever the path exists and are kept while it doesn't.
   - A Feature state that is exactly `{"$error": "…"}` shows as an error instead of a tree; a Feature missing from the selected Action's state shows "<Feature> didn't exist at this point".
   - The State/Diff tab choice belongs to the Viewer tab and survives switching Action, Feature and Session.
