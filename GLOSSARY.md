@@ -61,7 +61,7 @@ The complete state of every Feature in a Session just after one of its Actions (
 _Avoid_: Dump, initial state, sync
 
 **Resync**:
-A point in a Session's history where the Viewer received a Snapshot after missing one or more Actions.
+A point in a Session's History where the Viewer received a Snapshot that doesn't follow on from what it already had, usually because Actions were lost on the way (including before a new Session's first Snapshot); the state before it can't be diffed against the state after it.
 _Avoid_: Gap, reset, reconnect
 
 **Follow mode**:

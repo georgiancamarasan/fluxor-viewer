@@ -4,9 +4,13 @@ The middleware buffers every unsent Action (up to `BufferSize`, from the Session
 
 A batch counts as delivered once handed to the send, even if the send fails, so a Snapshot's `LastSequence` is never less than any Sequence already sent. A lost batch then shows as a Sequence gap, and the Viewer never has to accept a Snapshot older than its own state.
 
+Every loss is followed by a Snapshot: an Action dropped from a full buffer, a batch whose send failed (the reconnect starts with one) and an Action that couldn't be built (it leaves the buffer into the base like a dropped one). So the Viewer never detects gaps between Actions or rebuilds state across one; a Resync, placed when a Snapshot doesn't follow on from what it had, is the only marker of lost History. A Snapshot older than the Viewer's state would be a bug: the Viewer still takes it as a Resync rather than rewinding.
+
 This extends [ADR 0002](0002-changed-feature-deltas-with-snapshot-resync.md): every (re)connect still starts with a full Snapshot.
 
 ## Considered Options
+
+- **Viewer detects Sequence gaps between Actions**: catches a skipped Action without middleware changes, but needs a second kind of marker whose state stays untrustworthy until some later Snapshot.
 
 - **Snapshot of the current state, no offline buffer**: simpler, but every disconnect, including the Viewer starting after the app, loses all History in between.
 - **Resend a failed batch after a Snapshot from before it**: loses nothing when the batch never arrived, but when it did arrive, the Viewer would have to rewind to an older Snapshot and then discard the resent Actions as duplicates, which corrupts its diffs.
