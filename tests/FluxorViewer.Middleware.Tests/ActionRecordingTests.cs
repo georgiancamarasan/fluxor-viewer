@@ -24,7 +24,7 @@ public class ActionRecordingTests
         var action = Assert.Single(await Harness.ActionsSent(connection, 1));
         Assert.Equal(snapshot.SessionId, action.SessionId);
         Assert.Equal(typeof(IncrementAction).FullName, action.ActionType);
-        Assert.Equal("{}", action.ActionJson);
+        Assert.Equal("{}", action.Payload);
         var counter = Assert.Single(action.ChangedFeatures);
         Assert.Equal("Counter", counter.Name);
         Assert.Equal(typeof(CounterState).FullName, counter.StateType);

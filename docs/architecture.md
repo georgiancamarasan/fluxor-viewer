@@ -89,7 +89,7 @@ Snapshot
 
 ActionRecorded
   SessionId, Sequence, Timestamp,
-  ActionType, ActionJson,
+  ActionType, Payload,
   ChangedFeatures: [ { Name, StateType, StateJson } ]
 ```
 

@@ -155,9 +155,9 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
 
     public static TheoryData<string, ActionRecorded> InvalidActions => new()
     {
-        { "missing its ActionType, ActionJson or ChangedFeatures", NewAction(Guid.Empty, 2) with { ActionType = null! } },
-        { "missing its ActionType, ActionJson or ChangedFeatures", NewAction(Guid.Empty, 2) with { ActionJson = null! } },
-        { "missing its ActionType, ActionJson or ChangedFeatures", NewAction(Guid.Empty, 2) with { ChangedFeatures = null! } },
+        { "missing its ActionType, Payload or ChangedFeatures", NewAction(Guid.Empty, 2) with { ActionType = null! } },
+        { "missing its ActionType, Payload or ChangedFeatures", NewAction(Guid.Empty, 2) with { Payload = null! } },
+        { "missing its ActionType, Payload or ChangedFeatures", NewAction(Guid.Empty, 2) with { ChangedFeatures = null! } },
         { "a Changed Feature that is null or missing its Name, StateType or StateJson", NewAction(Guid.Empty, 2) with { ChangedFeatures = [null!] } },
         { "a Changed Feature that is null or missing its Name, StateType or StateJson", NewAction(Guid.Empty, 2) with { ChangedFeatures = [new(null!, "A", "{}")] } },
     };

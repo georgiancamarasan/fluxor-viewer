@@ -31,7 +31,7 @@ public class SerialisationTests
         var actions = await Harness.ActionsSent(connection, 2);
         Assert.Equal([2L, 3L], actions.Select(a => a.Sequence));
         Assert.Equal(typeof(ExplodingAction).FullName, actions[0].ActionType);
-        Assert.Equal("Boom", Error(actions[0].ActionJson));
+        Assert.Equal("Boom", Error(actions[0].Payload));
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class SerialisationTests
         harness.Dispatcher.Dispatch(new IncrementAction());
 
         var action = Assert.Single(await Harness.ActionsSent(connection, 1));
-        Assert.Equal("{}", action.ActionJson);
+        Assert.Equal("{}", action.Payload);
         var broken = Assert.Single(action.ChangedFeatures, f => f.Name == "Broken");
         Assert.Equal(typeof(BrokenState).FullName, broken.StateType);
         Assert.Equal("Converter says no", Error(broken.StateJson));
@@ -75,7 +75,7 @@ public class SerialisationTests
 
         harness.Dispatcher.Dispatch(new DeepAction(Chain(70)));
 
-        var message = Error(Assert.Single(await Harness.ActionsSent(connection, 1)).ActionJson);
+        var message = Error(Assert.Single(await Harness.ActionsSent(connection, 1)).Payload);
         Assert.StartsWith("Nested deeper than MaxDepth (64) at $.Root.Next.Next.", message);
         Assert.DoesNotContain("cycle", message);
     }
@@ -90,8 +90,8 @@ public class SerialisationTests
         harness.Dispatcher.Dispatch(new DeepAction(Chain(120)));
 
         var actions = await Harness.ActionsSent(connection, 2);
-        Assert.Equal(70, JsonDocument.Parse(actions[0].ActionJson, new JsonDocumentOptions { MaxDepth = 100 }).RootElement.ToString().Split("Next").Length - 1);
-        Assert.StartsWith("Nested deeper than MaxDepth (100) at $.Root.Next.", Error(actions[1].ActionJson));
+        Assert.Equal(70, JsonDocument.Parse(actions[0].Payload, new JsonDocumentOptions { MaxDepth = 100 }).RootElement.ToString().Split("Next").Length - 1);
+        Assert.StartsWith("Nested deeper than MaxDepth (100) at $.Root.Next.", Error(actions[1].Payload));
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public class SerialisationTests
 
         harness.Dispatcher.Dispatch(new LoopAction(loop));
 
-        Assert.Equal("""{"Loop":{"Self":null}}""", Assert.Single(await Harness.ActionsSent(connection, 1)).ActionJson);
+        Assert.Equal("""{"Loop":{"Self":null}}""", Assert.Single(await Harness.ActionsSent(connection, 1)).Payload);
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public class SerialisationTests
 
         harness.Dispatcher.Dispatch(new LongWindedAction());
 
-        var message = Error(Assert.Single(await Harness.ActionsSent(connection, 1)).ActionJson);
+        var message = Error(Assert.Single(await Harness.ActionsSent(connection, 1)).Payload);
         Assert.Equal(new string('x', 499) + "…", message);
     }
 

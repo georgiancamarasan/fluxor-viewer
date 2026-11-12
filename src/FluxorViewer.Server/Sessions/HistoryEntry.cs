@@ -20,7 +20,7 @@ public sealed record ActionEntry(
     long Sequence,
     DateTimeOffset Timestamp,
     string ActionType,
-    string ActionJson,
+    string Payload,
     IReadOnlySet<string> ChangedFeatures,
     ImmutableDictionary<string, FeatureState> Before,
     ImmutableDictionary<string, FeatureState> After) : HistoryEntry(Id, Sequence, After);

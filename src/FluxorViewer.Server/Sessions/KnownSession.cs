@@ -66,7 +66,7 @@ internal sealed class KnownSession(Snapshot firstSnapshot, long seenOrder, Histo
             action.Sequence,
             action.Timestamp,
             action.ActionType,
-            action.ActionJson,
+            action.Payload,
             action.ChangedFeatures.Select(f => f.Name).ToFrozenSet(),
             before,
             after));

@@ -144,7 +144,7 @@ public class SendingTests
         var actions = await Harness.ActionsSent(connection, 4);
 
         Assert.Equal([2L, 3L, 4L, 5L], actions.Select(a => a.Sequence));
-        Assert.Contains("$error", actions[2].ActionJson);
+        Assert.Contains("$error", actions[2].Payload);
     }
 
     [Fact]

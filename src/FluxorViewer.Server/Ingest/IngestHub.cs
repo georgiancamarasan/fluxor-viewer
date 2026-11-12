@@ -54,8 +54,8 @@ public sealed class IngestHub(ISessionRegistry registry, IngestRejections reject
             throw Reject("the Actions batch is missing or contains null entries.");
         if (actions.FirstOrDefault(a => a.SessionId != bound) is { } stray)
             throw Reject($"this connection reports Session {bound}, but an Action is for Session {stray.SessionId}.");
-        if (actions.FirstOrDefault(a => a.ActionType is null || a.ActionJson is null || a.ChangedFeatures is null) is { } incomplete)
-            throw Reject($"Action #{incomplete.Sequence} is missing its ActionType, ActionJson or ChangedFeatures.");
+        if (actions.FirstOrDefault(a => a.ActionType is null || a.Payload is null || a.ChangedFeatures is null) is { } incomplete)
+            throw Reject($"Action #{incomplete.Sequence} is missing its ActionType, Payload or ChangedFeatures.");
         if (actions.FirstOrDefault(a => !a.ChangedFeatures.All(IsComplete)) is { } broken)
             throw Reject($"Action #{broken.Sequence} has a Changed Feature that is null or missing its Name, StateType or StateJson.");
 
