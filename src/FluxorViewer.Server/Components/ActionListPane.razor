@@ -1,0 +1,72 @@
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+
+<div class="flex items-center gap-3 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+    <input class="control min-w-0 flex-1" type="search" placeholder="filter…" aria-label="Filter by Action type"
+           data-test="action-filter" value="@List.Filter" @oninput="OnFilter" />
+    <label class="flex shrink-0 items-center gap-1.5 text-sm" title="Hide Actions that didn't change the selected Feature">
+        <input type="checkbox" data-test="changed-only" checked="@List.ChangedOnly" disabled="@(!HasFeature)"
+               @onchange="OnChangedOnly" />
+        changed only
+    </label>
+</div>
+
+@if (List.ActionCount == 0)
+{
+    <p class="muted p-4" data-test="no-actions">No Actions yet</p>
+}
+else if (List.Rows.Length == 0)
+{
+    <p class="muted p-4" data-test="no-match">
+        No Actions match.
+        <button class="underline" data-test="show-all" @onclick="ShowAll">Show all</button>
+    </p>
+}
+else
+{
+    <div class="min-h-0 flex-1 overflow-auto" role="listbox" aria-label="Actions">
+        @* Fixed row height (h-7 = 28px) keeps virtualisation exact. *@
+        <Virtualize Items="List.Rows" ItemSize="28" Context="row">
+            @{ var selected = row.Entry.Sequence == List.Selected?.Sequence; }
+            <div class="action-row @(selected ? "action-row-selected" : "") @(row.Dimmed ? "opacity-45" : "")"
+                 role="option" aria-selected="@(selected ? "true" : "false")" data-dimmed="@(row.Dimmed ? "true" : "false")"
+                 data-test="action-row" @key="row.Entry.Sequence" @onclick="() => Select(row.Entry.Sequence)">
+                <span class="w-12 shrink-0 text-right text-zinc-500 tabular-nums" data-test="sequence">@row.Entry.Sequence</span>
+                <span class="min-w-0 flex-1 truncate font-mono" data-test="type" title="@row.Entry.ActionType">@row.ShortName</span>
+                @{ var local = row.Entry.Timestamp.ToLocalTime(); }
+                <span class="shrink-0 text-zinc-500 tabular-nums" data-test="time"
+                      title="@local.ToString("yyyy-MM-dd HH:mm:ss.fff zzz")">@local.ToString("HH:mm:ss.fff")</span>
+            </div>
+        </Virtualize>
+    </div>
+}
+
+@code {
+    /// <summary>The tab's list state; <see cref="Home"/> updates it from the registry.</summary>
+    [Parameter, EditorRequired] public ActionList List { get; set; } = default!;
+
+    /// <summary>Whether a Feature is selected; without one, "changed only" has nothing to compare against.</summary>
+    [Parameter] public bool HasFeature { get; set; }
+
+    /// <summary>Raised when the developer selects an Action, after <see cref="List"/> has recorded it.</summary>
+    [Parameter] public EventCallback SelectedChanged { get; set; }
+
+    private void OnFilter(ChangeEventArgs e)
+    {
+        List.Filter = e.Value as string ?? "";
+        List.Refilter();
+    }
+
+    private void OnChangedOnly(ChangeEventArgs e)
+    {
+        List.ChangedOnly = e.Value is true;
+        List.Refilter();
+    }
+
+    private void ShowAll() => List.ShowAll();
+
+    private Task Select(long sequence)
+    {
+        List.Select(sequence);
+        return SelectedChanged.InvokeAsync();
+    }
+}

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FluxorViewer.Server.Tests;
 
-// UI-1 and UI-2: the layout shell, Session picker and Feature picker, against a real registry.
+// UI-1, UI-2 and UI-3: the layout shell, Session and Feature pickers, and Action list, against a real registry.
 public class HomePageTests : BunitContext
 {
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance);
@@ -215,5 +215,137 @@ public class HomePageTests : BunitContext
         registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, DateTimeOffset.UtcNow, "App.Tick", "{}", [])]);
 
         page.WaitForAssertion(() => Assert.Equal(["Auth", "Counter"], Features(page)));
+    }
+
+    private static readonly DateTimeOffset At = new(2026, 11, 12, 10, 2, 3, 45, TimeSpan.Zero);
+
+    private void Dispatch(string connectionId, Guid sessionId, long sequence, string type, params string[] changed) =>
+        registry.ActionsReceived(connectionId, [new ActionRecorded(
+            sessionId, sequence, At, type, "{}", [.. changed.Select(f => new FeatureState(f, $"App.{f}State", $"{{\"v\":{sequence}}}"))])]);
+
+    private string[] Rows(IRenderedComponent<Home> page) =>
+        [.. page.FindAll("[data-test=action-row]").Select(r => r.QuerySelector("[data-test=type]")!.TextContent.Trim())];
+
+    [Fact]
+    public void Each_Action_row_shows_sequence_short_type_and_local_time()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        Dispatch("c1", Id("aaaa"), 1, "MyApp.Items.LoadedAction<MyApp.Item>", "Counter");
+
+        var page = Render<Home>();
+
+        var row = page.Find("[data-test=action-row]");
+        Assert.Equal("1", row.QuerySelector("[data-test=sequence]")!.TextContent.Trim());
+        var type = row.QuerySelector("[data-test=type]")!;
+        Assert.Equal("LoadedAction<Item>", type.TextContent.Trim());
+        Assert.Equal("MyApp.Items.LoadedAction<MyApp.Item>", type.GetAttribute("title"));
+        var time = row.QuerySelector("[data-test=time]")!;
+        Assert.Equal(At.ToLocalTime().ToString("HH:mm:ss.fff"), time.TextContent.Trim());
+        Assert.Equal(At.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz"), time.GetAttribute("title"));
+    }
+
+    [Fact]
+    public void Actions_that_did_not_change_the_selected_Feature_are_dimmed()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Auth", "Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Login", "Auth");
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+
+        var page = Render<Home>();
+        page.Find("[data-test=feature-picker] select").Change("Counter");
+
+        Assert.Equal(["true", "false"], page.FindAll("[data-test=action-row]").Select(r => r.GetAttribute("data-dimmed")));
+    }
+
+    [Fact]
+    public void Changed_only_and_the_filter_hide_rows_and_Show_all_brings_them_back()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Auth", "Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Login", "Auth");
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        Dispatch("c1", Id("aaaa"), 3, "App.Decrement", "Counter");
+        var page = Render<Home>();
+        page.Find("[data-test=feature-picker] select").Change("Counter");
+
+        page.Find("[data-test=changed-only]").Change(true);
+        Assert.Equal(["Increment", "Decrement"], Rows(page));
+
+        page.Find("[data-test=action-filter]").Input("INC");
+        Assert.Equal(["Increment"], Rows(page));
+
+        page.Find("[data-test=action-filter]").Input("nothing");
+        Assert.Empty(Rows(page));
+        Assert.Contains("No Actions match", page.Find("[data-test=no-match]").TextContent);
+
+        page.Find("[data-test=show-all]").Click();
+        Assert.Equal(["Login", "Increment", "Decrement"], Rows(page));
+        Assert.False(page.Find("[data-test=changed-only]").HasAttribute("checked"));
+    }
+
+    [Fact]
+    public void Changed_only_is_disabled_without_a_selected_Feature()
+    {
+        registry.SnapshotReceived("c1", new Snapshot(
+            ProtocolVersion.Current, Id("aaaa"), "MyApp", Runtime.Server, DateTimeOffset.UtcNow, 0, 0, []));
+
+        var page = Render<Home>();
+
+        Assert.True(page.Find("[data-test=changed-only]").HasAttribute("disabled"));
+    }
+
+    [Fact]
+    public void A_Session_without_Actions_says_so()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+
+        var page = Render<Home>();
+
+        Assert.Contains("No Actions yet", page.Find("[data-test=no-actions]").TextContent);
+    }
+
+    [Fact]
+    public void Clicking_a_row_selects_it_and_switching_Session_clears_the_selection()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
+        Dispatch("c1", Id("aaaa"), 1, "App.A");
+        Dispatch("c1", Id("aaaa"), 2, "App.B");
+        var page = Render<Home>();
+        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        Assert.Empty(page.FindAll("[data-test=action-row][aria-selected=true]"));
+
+        page.FindAll("[data-test=action-row]")[1].Click();
+        Assert.Equal("B", page.Find("[data-test=action-row][aria-selected=true] [data-test=type]").TextContent.Trim());
+
+        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        Assert.Empty(page.FindAll("[data-test=action-row][aria-selected=true]"));
+    }
+
+    [Fact]
+    public void New_Actions_appear_without_reloading()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        var page = Render<Home>();
+
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+
+        page.WaitForAssertion(() => Assert.Equal(["Increment"], Rows(page)));
+    }
+
+    [Fact]
+    public void Clearing_a_connected_Session_empties_the_list_and_the_selection()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        var page = Render<Home>();
+        page.Find("[data-test=action-row]").Click();
+
+        registry.Clear(Id("aaaa"));
+        page.WaitForAssertion(() => Assert.NotNull(page.Find("[data-test=no-actions]")));
+
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        page.WaitForAssertion(() => Assert.Equal(["Increment"], Rows(page)));
+        Assert.Empty(page.FindAll("[data-test=action-row][aria-selected=true]"));
     }
 }

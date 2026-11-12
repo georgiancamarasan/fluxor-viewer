@@ -19,8 +19,15 @@
     else
     {
         <main class="flex min-h-0 flex-1">
-            <section class="pane w-96 shrink-0 border-r border-zinc-200 dark:border-zinc-800">
-                <Placeholder Selected="selection.Selected is not null">Actions</Placeholder>
+            <section class="flex min-h-0 w-96 shrink-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
+                @if (selection.Selected is null)
+                {
+                    <div class="pane"><Placeholder Selected="false" /></div>
+                }
+                else
+                {
+                    <ActionListPane List="actions" HasFeature="features.Selected is not null" SelectedChanged="StateHasChanged" />
+                }
             </section>
             <section class="pane flex-1">
                 <Placeholder Selected="selection.Selected is not null">State</Placeholder>
@@ -32,6 +39,7 @@
 @code {
     private readonly SessionSelection selection = new();
     private readonly FeatureSelection features = new();
+    private readonly ActionList actions = new();
     private IReadOnlyList<ReceivedSession> sessions = [];
 
     protected override void OnInitialized()
@@ -57,20 +65,29 @@
     {
         sessions = Registry.GetSessions();
         selection.Update(sessions);
-        UpdateFeatures();
+        UpdateSelectedSession();
     }
 
     private void Select(Guid sessionId)
     {
         selection.Select(sessionId);
         selection.Update(sessions);
-        UpdateFeatures();
+        UpdateSelectedSession();
     }
 
-    private void SelectFeature(string featureName) => features.Select(featureName);
+    private void SelectFeature(string featureName)
+    {
+        features.Select(featureName);
+        UpdateSelectedSession();
+    }
 
-    private void UpdateFeatures() =>
-        features.Update(sessions.FirstOrDefault(s => s.SessionId == selection.Selected)?.Current.Keys ?? []);
+    /// <summary>Re-reads what depends on the selected Session: its Features, then its Actions against the Feature.</summary>
+    private void UpdateSelectedSession()
+    {
+        var session = sessions.FirstOrDefault(s => s.SessionId == selection.Selected);
+        features.Update(session?.Current.Keys ?? []);
+        actions.Update(session, features.Selected);
+    }
 
     public void Dispose() => Registry.Changed -= OnChanged;
 }

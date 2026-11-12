@@ -32,6 +32,10 @@ _Avoid_: Store, slice, module
 An object dispatched to a Fluxor store, as recorded in a Session's history.
 _Avoid_: Event, message, command
 
+**Action type**:
+The .NET type of an Action, which says what kind of Action it is; shown by its short name.
+_Avoid_: Action name, kind
+
 **History**:
 The ordered record the Viewer keeps of a Session's Actions and its Resyncs, each with the Feature states after it.
 _Avoid_: Log, timeline, journal
