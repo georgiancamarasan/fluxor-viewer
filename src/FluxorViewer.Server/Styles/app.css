@@ -7,10 +7,7 @@
 @layer components {
     .control {
         @apply rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900;
-    }
-
-    /* The header's pickers and buttons show where keyboard focus is; the Clear prompt's Cancel also shows it on open. */
-    header .control {
+        /* Shows where keyboard focus is (a text box shows it on click too); the Clear prompt's Cancel also shows it on open. */
         @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 dark:focus-visible:outline-sky-400;
     }
 
