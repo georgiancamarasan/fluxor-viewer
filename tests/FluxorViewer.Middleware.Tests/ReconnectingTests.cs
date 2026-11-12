@@ -82,7 +82,8 @@ public class ReconnectingTests
     [Fact]
     public async Task A_rejection_by_the_Viewer_stops_the_Session_for_good()
     {
-        var viewer = new FakeViewer { SnapshotFailure = new Microsoft.AspNetCore.SignalR.HubException("Wrong protocol version") };
+        var viewer = new FakeViewer { SnapshotFailure = new Microsoft.AspNetCore.SignalR.HubException(
+            "An unexpected error occurred invoking 'Snapshot' on the server. HubException: FluxorViewer: wrong protocol version") };
         await using var harness = new Harness(viewer: viewer);
         await harness.Start();
         await Wait.Until(() => harness.Logs.Entries.Any(e => e.Level == LogLevel.Warning));
@@ -93,6 +94,45 @@ public class ReconnectingTests
         await Task.Delay(100, Wait.Ct);
 
         Assert.Single(viewer.Connections);
+    }
+
+    [Fact]
+    public async Task An_unexpected_error_in_the_Viewer_is_retried_like_a_lost_connection()
+    {
+        // What SignalR sends for any exception a hub method throws, unless detailed errors are on.
+        var viewer = new FakeViewer
+        {
+            SnapshotFailure = new Microsoft.AspNetCore.SignalR.HubException(
+                "An unexpected error occurred invoking 'Snapshot' on the server."),
+        };
+        await using var harness = new Harness(viewer: viewer);
+        var first = await harness.Start();
+        await first.Disposed.WaitAsync(Wait.Timeout, Wait.Ct);
+
+        viewer.SnapshotFailure = null;
+        await harness.AdvanceUntil(() => harness.Viewer.Connections.Count == 2);
+
+        Assert.IsType<Snapshot>(await harness.Viewer.Connections.Last().FirstMessage.WaitAsync(Wait.Timeout, Wait.Ct));
+        Assert.DoesNotContain(harness.Logs.Entries, e => e.Level >= LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task Connecting_without_the_Snapshot_being_accepted_keeps_backing_off()
+    {
+        var viewer = new FakeViewer { SnapshotFailure = new HttpRequestException("Reset") };
+        await using var harness = new Harness(viewer: viewer);
+        await harness.Start();
+        var attempts = new List<DateTimeOffset> { harness.Time.GetUtcNow() };
+
+        for (var i = 0; i < 4; i++)
+        {
+            var count = harness.Viewer.Connections.Count;
+            await harness.AdvanceUntil(() => harness.Viewer.Connections.Count > count);
+            attempts.Add(harness.Time.GetUtcNow());
+        }
+
+        var gaps = attempts.Zip(attempts.Skip(1), (a, b) => Math.Round((b - a).TotalSeconds));
+        Assert.Equal([1d, 2d, 4d, 10d], gaps);
     }
 
     [Fact]

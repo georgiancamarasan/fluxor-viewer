@@ -25,7 +25,7 @@ public sealed class IngestHub(ISessionRegistry registry, IngestRejections reject
             var message = $"protocol version {snapshot.ProtocolVersion} is not compatible with this Viewer's " +
                           $"{ProtocolVersion.Current}. Use the same major version of FluxorViewer.Middleware and the Viewer.";
             rejections.VersionMismatch(snapshot.SessionId, snapshot.AppName, message);
-            throw new HubException($"FluxorViewer: {message}");
+            throw new HubException(Rejection.Message(message));
         }
 
         if (snapshot.SessionId == Guid.Empty)
@@ -68,7 +68,7 @@ public sealed class IngestHub(ISessionRegistry registry, IngestRejections reject
     private HubException Reject(string reason)
     {
         rejections.Rejected(Context, reason);
-        return new HubException($"FluxorViewer: {reason}");
+        return new HubException(Rejection.Message(reason));
     }
 }
 

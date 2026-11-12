@@ -81,6 +81,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         await Assert.ThrowsAsync<HubException>(() => retry.InvokeAsync("Snapshot", snapshot, Ct));
 
         Assert.Contains($"protocol version {snapshot.ProtocolVersion} is not compatible", first.Message);
+        Assert.True(Rejection.IsRejection(first.Message)); // So the middleware stops rather than retrying.
         Assert.Null(viewer.Registry.Find(snapshot.SessionId));
         Assert.Single(viewer.IngestLogs(LogLevel.Warning), l => l.Message.Contains(snapshot.SessionId.ToString()));
     }
@@ -95,6 +96,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
             connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 1) }, Ct));
 
         Assert.Contains("before a Snapshot", ex.Message);
+        Assert.True(Rejection.IsRejection(ex.Message)); // So the middleware stops rather than retrying.
         Assert.Null(viewer.Registry.Find(sessionId));
     }
 

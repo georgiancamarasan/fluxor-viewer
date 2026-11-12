@@ -40,6 +40,9 @@ internal sealed class SessionReporter(
     private bool signalled;
     private bool stopped;
 
+    // Connection attempts since the Viewer last accepted a Snapshot; picks the backoff. Only the sender uses it.
+    private int failedAttempts;
+
     private Task run = Task.CompletedTask;
     private int disposed;
 
@@ -116,14 +119,12 @@ internal sealed class SessionReporter(
     /// </summary>
     private async Task RunAsync(SessionInfo session, CancellationToken cancellationToken)
     {
-        var attempt = 0;
         while (true)
         {
             var connection = connectionFactory.Create(new Uri(options.ServerUrl));
             try
             {
                 await connection.StartAsync(cancellationToken);
-                attempt = 0;
                 lock (gate)
                     snapshotDue = true;
                 if (!await SendAsync(connection, session, cancellationToken))
@@ -133,11 +134,12 @@ internal sealed class SessionReporter(
             {
                 return;
             }
-            catch (HubException ex)
+            catch (HubException ex) when (Rejection.IsRejection(ex.Message))
             {
-                // The Viewer refused us (e.g. protocol version mismatch): retrying won't help, and the developer needs to see why.
+                // The Viewer refused us (e.g. protocol version mismatch): retrying won't help, and the developer needs to
+                // see why. Any other HubException is an unexpected error in the Viewer, retried like a lost connection.
                 Stop();
-                logger.LogWarning("FluxorViewer: the Viewer rejected Session {SessionId}: {Reason}", session.SessionId, ex.Message);
+                logger.LogWarning("FluxorViewer: the Viewer rejected Session {SessionId}: {Reason}", session.SessionId, Rejection.Reason(ex.Message));
                 return;
             }
             catch (Exception ex)
@@ -152,7 +154,7 @@ internal sealed class SessionReporter(
 
             try
             {
-                await Task.Delay(Backoff[Math.Min(attempt++, Backoff.Length - 1)], time, cancellationToken);
+                await Task.Delay(Backoff[Math.Min(failedAttempts++, Backoff.Length - 1)], time, cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -289,6 +291,7 @@ internal sealed class SessionReporter(
         }
 
         await connection.SendSnapshotAsync(snapshot, cancellationToken);
+        failedAttempts = 0; // Accepted: the next failure starts the backoff over.
         lock (gate)
             droppedCount -= due.DroppedCount;
         return true;

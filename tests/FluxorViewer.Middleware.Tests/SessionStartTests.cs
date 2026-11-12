@@ -147,7 +147,8 @@ public class SessionStartTests
     public async Task A_Viewer_rejection_is_logged_at_warning_with_its_reason()
     {
         var logs = new CapturingLoggerFactory();
-        var viewer = new FakeViewer { SnapshotFailure = new Microsoft.AspNetCore.SignalR.HubException("FluxorViewer: protocol version 2.0 is not compatible") };
+        var viewer = new FakeViewer { SnapshotFailure = new Microsoft.AspNetCore.SignalR.HubException(
+            "An unexpected error occurred invoking 'Snapshot' on the server. HubException: FluxorViewer: protocol version 2.0 is not compatible") };
         await using var provider = Provider(viewer, logs);
         await StartStore(provider);
 
@@ -155,6 +156,7 @@ public class SessionStartTests
 
         var warning = Assert.Single(logs.Entries, e => e.Level == LogLevel.Warning);
         Assert.Contains("protocol version 2.0 is not compatible", warning.Message);
+        Assert.DoesNotContain("unexpected error", warning.Message); // Just the Viewer's reason.
     }
 
     [Fact]
