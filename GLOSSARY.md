@@ -57,7 +57,7 @@ A Feature whose state an Action replaced, even if the new state looks identical 
 _Avoid_: Dirty, touched, affected
 
 **Snapshot**:
-The complete state of every Feature in a Session at one moment, sent when a Session (re)connects to the Viewer.
+The complete state of every Feature in a Session just after one of its Actions (or at its start), sent when a Session (re)connects to the Viewer and followed by the Actions that come after that point.
 _Avoid_: Dump, initial state, sync
 
 **Resync**:
