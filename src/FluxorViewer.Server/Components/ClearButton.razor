@@ -6,7 +6,8 @@
     <div class="flex items-center gap-2" role="alertdialog" aria-label="Confirm Clear" data-test="clear-prompt" @onkeydown="OnKeyDown">
         <span class="text-sm" data-test="clear-question">@Question(session)</span>
         <button class="control border-red-300 text-red-700 dark:border-red-800 dark:text-red-400" data-test="clear-confirm" @onclick="Confirm">Clear</button>
-        <button class="control" data-test="clear-cancel" @ref="cancel" @onclick="Cancel">Cancel</button>
+        @* :focus, not :focus-visible: the prompt opens from a mouse click, after which the browser wouldn't show a focus-visible ring. *@
+        <button class="control focus:outline-2 focus:outline-offset-2 focus:outline-sky-500 dark:focus:outline-sky-400" data-test="clear-cancel" @ref="cancel" @onclick="Cancel">Cancel</button>
     </div>
 }
 else
