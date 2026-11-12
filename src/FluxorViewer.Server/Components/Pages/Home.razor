@@ -27,7 +27,8 @@
                 }
                 else
                 {
-                    <ActionListPane List="actions" HasFeature="features.Selected is not null" SelectedChanged="StateHasChanged" />
+                    <ActionListPane List="actions" HasFeature="features.Selected is not null" SelectedChanged="StateHasChanged"
+                                    DiscardedBeyond="SelectedSession is { HasDiscarded: true } ? Registry.Limit : null" />
                 }
             </section>
             <section class="flex min-h-0 min-w-0 flex-1 flex-col">

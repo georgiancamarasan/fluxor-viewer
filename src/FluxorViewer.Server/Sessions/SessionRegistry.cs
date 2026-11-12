@@ -11,7 +11,7 @@ namespace FluxorViewer.Server.Sessions;
 /// One lock guards everything: hub calls from many Sessions, closes and Clears are serialised, and readers get copies.
 /// <see cref="Changed"/> is raised after the lock is released.
 /// </remarks>
-public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvider time) : ISessionRegistry
+public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvider time, HistoryLimit limit) : ISessionRegistry
 {
     private readonly Lock gate = new();
     private readonly Dictionary<Guid, Entry> sessions = [];
@@ -24,6 +24,9 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
     /// (in Blazor, <c>InvokeAsync</c>). A handler that throws is logged and doesn't affect ingestion or other handlers.
     /// </summary>
     public event Action<SessionChange>? Changed;
+
+    /// <summary>The most entries each Session's History keeps.</summary>
+    public HistoryLimit Limit => limit;
 
     public void SnapshotReceived(string connectionId, Snapshot snapshot)
     {
@@ -71,6 +74,7 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
                     lost,
                     firstLost <= snapshot.LastSequence ? firstLost : null,
                     FeatureMap.From(snapshot.Features)));
+                session.Discard(limit.Value);
                 changes.Add(new EntriesAppended(snapshot.SessionId, 1));
             }
 
@@ -91,11 +95,10 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
             // Actions from a connection the Session has moved away from are already covered by the newer Snapshot.
             if (Current(connectionId) is not { } session)
                 return;
-            var before = session.History.Count;
-            foreach (var action in actions)
-                session.Record(action);
-            if (session.History.Count > before)
-                change = new EntriesAppended(session.First.SessionId, session.History.Count - before);
+            var appended = actions.Count(session.Record);
+            session.Discard(limit.Value);
+            if (appended > 0)
+                change = new EntriesAppended(session.First.SessionId, appended);
         }
         Raise(change);
     }
@@ -129,7 +132,7 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
             if (session.ConnectionId is null)
                 sessions.Remove(sessionId);
             else
-                session.History.Clear();
+                session.ClearHistory();
         }
         Raise(new SessionCleared(sessionId));
     }
@@ -182,6 +185,9 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
         public string? ConnectionId { get; set; }
         public bool WarnedOlderSnapshot { get; set; }
 
+        /// <summary>Whether entries were discarded to keep the History within its limit, since the last Clear.</summary>
+        public bool HasDiscarded { get; private set; }
+
         private long lastId;
 
         /// <summary>The Id for the next entry appended to the History; never reused, even after Clear.</summary>
@@ -189,12 +195,12 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
 
         /// <summary>
         /// Appends the Action with the state before it and after it; only its Changed Features are new. An Action at or
-        /// before the last received Sequence is a duplicate and ignored.
+        /// before the last received Sequence is a duplicate and ignored; returns whether it was appended.
         /// </summary>
-        public void Record(ActionRecorded action)
+        public bool Record(ActionRecorded action)
         {
             if (action.Sequence <= LastSequence)
-                return;
+                return false;
             var before = Current;
             var after = before.SetItems(action.ChangedFeatures.Select(f => KeyValuePair.Create(f.Name, f)));
             History.Add(new ActionEntry(
@@ -208,10 +214,30 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
                 after));
             Current = after;
             LastSequence = action.Sequence;
+            return true;
+        }
+
+        /// <summary>Discards the oldest entries beyond <paramref name="limit"/>.</summary>
+        public void Discard(int limit)
+        {
+            if (History.Count <= limit)
+                return;
+            History.RemoveRange(0, History.Count - limit);
+            HasDiscarded = true;
+        }
+
+        /// <summary>Empties the History; the current Feature states and last Sequence stay as the new starting point.</summary>
+        public void ClearHistory()
+        {
+            History.Clear();
+            HasDiscarded = false;
         }
 
         public ReceivedSession ToView() => new(
-            First.SessionId, First.AppName, First.Runtime, First.StartedAt, ConnectionId, [.. History], Current, LastSequence);
+            First.SessionId, First.AppName, First.Runtime, First.StartedAt, ConnectionId, [.. History], Current, LastSequence)
+        {
+            HasDiscarded = HasDiscarded,
+        };
     }
 }
 
@@ -288,6 +314,9 @@ public sealed record ReceivedSession(
     public string ShortId => SessionId.ToString("N")[..4];
 
     public SessionStatus Status => ConnectionId is null ? SessionStatus.Disconnected : SessionStatus.Connected;
+
+    /// <summary>Whether older entries were discarded to keep the History within its limit, since the last Clear.</summary>
+    public bool HasDiscarded { get; init; }
 
     public IEnumerable<ActionEntry> Actions => History.OfType<ActionEntry>();
 }

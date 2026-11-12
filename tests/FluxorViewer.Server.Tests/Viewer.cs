@@ -19,12 +19,24 @@ public sealed class Viewer : WebApplicationFactory<Program>
     }
 
     /// <summary>A Viewer on <paramref name="port"/>, e.g. the port of one that was stopped, to restart it.</summary>
-    internal Viewer(int port)
+    internal Viewer(int port) : this(port, new Dictionary<string, string?>())
     {
+    }
+
+    /// <summary>A Viewer started with these configuration <paramref name="settings"/>, as if given on the command line.</summary>
+    internal Viewer(IReadOnlyDictionary<string, string?> settings) : this(0, settings)
+    {
+    }
+
+    private Viewer(int port, IReadOnlyDictionary<string, string?> settings)
+    {
+        this.settings = settings;
         UseKestrel(port);
         StartServer();
         BaseAddress = new Uri(Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First());
     }
+
+    private readonly IReadOnlyDictionary<string, string?> settings;
 
     public Uri BaseAddress { get; }
 
@@ -34,10 +46,14 @@ public sealed class Viewer : WebApplicationFactory<Program>
 
     public ConcurrentQueue<(LogLevel Level, string Category, string Message)> Logs { get; } = new();
 
-    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        foreach (var (key, value) in settings)
+            builder.UseSetting(key, value);
         builder.ConfigureLogging(logging => logging
             .AddProvider(new CapturingProvider(Logs))
             .AddFilter<CapturingProvider>(null, LogLevel.Debug)); // appsettings.json would otherwise hide Debug.
+    }
 
     public async Task<HubConnection> ConnectAsync()
     {

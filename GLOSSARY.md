@@ -48,6 +48,10 @@ _Avoid_: Serialization failure, bad state, `$error` (in prose)
 The ordered record the Viewer keeps of a Session's Actions and its Resyncs, each with the Feature states after it.
 _Avoid_: Log, timeline, journal
 
+**History limit**:
+The most entries the Viewer keeps in a Session's History; once it's reached, the oldest are discarded to make room. Discarded entries reached the Viewer, unlike lost Actions.
+_Avoid_: Cap, buffer size, max history
+
 **Sequence**:
 The position of an Action in its Session's history, counting from 1; a gap means Actions were lost.
 _Avoid_: Index, id, counter

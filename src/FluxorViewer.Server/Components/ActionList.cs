@@ -126,7 +126,7 @@ public sealed class ActionList
         ActionCount = entries.Count(e => e is ActionEntry);
         feature = selectedFeature;
 
-        // Re-point the selection at the latest copy of its entry, or drop it if Clear or the cap removed it.
+        // Re-point the selection at the latest copy of its entry, or drop it if Clear or the History limit discarded it.
         Selected = Selected is { } selected ? Find(selected.Id) : null;
         if (Selected is null)
             Following = true;

@@ -1,3 +1,4 @@
+@using System.Globalization
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @implements IAsyncDisposable
 @inject IJSRuntime JS
@@ -11,6 +12,14 @@
         changed only
     </label>
 </div>
+
+@* Not a row: the filter, "changed only" and Follow mode never see it. *@
+@if (DiscardedBeyond is { } limit)
+{
+    <p class="muted border-b border-zinc-200 px-3 py-1 text-xs dark:border-zinc-800" data-test="discarded">
+        Older entries discarded · the Viewer keeps the last @limit.Value.ToString("#,0", CultureInfo.InvariantCulture) per Session
+    </p>
+}
 
 @* The messages are about Actions only; Resync rows still show beneath them. *@
 @if (List.ActionCount == 0)
@@ -69,6 +78,9 @@ else if (List.VisibleActionCount == 0)
 
     /// <summary>Whether a Feature is selected; without one, "changed only" has nothing to compare against.</summary>
     [Parameter] public bool HasFeature { get; set; }
+
+    /// <summary>The History limit, once the Session has discarded older entries to stay within it; otherwise null.</summary>
+    [Parameter] public HistoryLimit? DiscardedBeyond { get; set; }
 
     /// <summary>Raised when the developer selects an Action, after <see cref="List"/> has recorded it.</summary>
     [Parameter] public EventCallback SelectedChanged { get; set; }

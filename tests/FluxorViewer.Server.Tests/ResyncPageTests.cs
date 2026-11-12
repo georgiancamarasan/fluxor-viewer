@@ -14,7 +14,7 @@ public class ResyncPageTests : BunitContext
     private static readonly DateTimeOffset ReceivedAt = new(2026, 11, 12, 10, 2, 3, 45, TimeSpan.Zero);
     private static readonly Guid SessionId = Guid.NewGuid();
 
-    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, new FakeTimeProvider(ReceivedAt));
+    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, new FakeTimeProvider(ReceivedAt), HistoryLimit.Default);
 
     // The Diff tab's rendering, recorded rather than run: jsondiffpatch runs in the browser.
     private readonly BunitJSModuleInterop diff;
