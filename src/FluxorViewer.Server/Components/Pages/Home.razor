@@ -40,7 +40,7 @@
                 {
                     @if (actions.Selected is ActionEntry action)
                     {
-                        <PayloadStrip Action="action" @bind-Expanded="payloadExpanded" Toggles="TogglesFor(payloadToggles, action.ActionType)" />
+                        <PayloadStrip Action="action" @bind-Expanded="payloadExpanded" Toggles="payloadChoices.For(action.ActionType)" />
                     }
                     <div class="flex gap-1 border-b border-zinc-200 px-4 dark:border-zinc-800" role="tablist" aria-label="Right pane" data-test="tabs">
                         @foreach (var tab in Enum.GetValues<RightTab>())
@@ -58,7 +58,7 @@
                         else
                         {
                             <StatePane Feature="@features.Selected" Entry="actions.Selected" Current="SelectedSession?.Current ?? []"
-                                       Toggles="TogglesFor(toggles, features.Selected)" />
+                                       Toggles="stateChoices.For(features.Selected)" />
                         }
                     </div>
                 }
@@ -74,12 +74,12 @@
     private IReadOnlyList<ReceivedSession> sessions = [];
     private RenderThrottle? throttle;
 
-    // The State tab's expand/collapse choices, per Feature name for this Viewer tab.
-    private readonly Dictionary<string, Dictionary<string, bool>> toggles = [];
+    // The State tab's expand/collapse choices, per Feature name.
+    private readonly TreeChoices stateChoices = new();
 
     // The payload strip: open or collapsed whatever the Action, and its tree's choices per full Action type, for this Viewer tab.
     private bool payloadExpanded;
-    private readonly Dictionary<string, Dictionary<string, bool>> payloadToggles = [];
+    private readonly TreeChoices payloadChoices = new();
 
     // The right pane's tab and the Diff tab's "Show unchanged", for this Viewer tab whatever the Action, Feature or Session.
     private enum RightTab { State, Diff }
@@ -136,9 +136,6 @@
         UpdateSelectedSession();
     }
 
-    private static Dictionary<string, bool> TogglesFor(Dictionary<string, Dictionary<string, bool>> byKey, string? key) =>
-        key is null ? [] : byKey.TryGetValue(key, out var choices) ? choices : byKey[key] = [];
-
     private ReceivedSession? SelectedSession => sessions.FirstOrDefault(s => s.SessionId == selection.Selected);
 
     /// <summary>Re-reads what depends on the selected Session: its Features, then its Actions against the Feature.</summary>
@@ -149,6 +146,7 @@
         actions.Update(session, features.Selected);
     }
 
+    /// <summary>Stops listening to the registry.</summary>
     public void Dispose()
     {
         Registry.Changed -= OnChanged;
