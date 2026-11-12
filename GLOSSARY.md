@@ -56,6 +56,10 @@ _Avoid_: Dump, initial state, sync
 A point in a Session's history where the Viewer received a Snapshot after missing one or more Actions.
 _Avoid_: Gap, reset, reconnect
 
+**Follow mode**:
+The Viewer keeping the newest Action the developer can see selected as Actions arrive; selecting an older Action pauses it, until the developer returns to the newest or the selection is lost.
+_Avoid_: Auto-scroll, tail, live mode
+
 **Viewer**:
 The standalone application that receives Sessions and lets the developer inspect their Actions and Feature states.
 _Avoid_: Server, dashboard, DevTools

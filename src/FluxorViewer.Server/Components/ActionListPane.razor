@@ -1,4 +1,6 @@
 @using Microsoft.AspNetCore.Components.Web.Virtualization
+@implements IAsyncDisposable
+@inject IJSRuntime JS
 
 <div class="flex items-center gap-3 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
     <input class="control min-w-0 flex-1" type="search" placeholder="filter…" aria-label="Filter by Action type"
@@ -23,20 +25,27 @@ else if (List.Rows.Length == 0)
 }
 else
 {
-    <div class="min-h-0 flex-1 overflow-auto" role="listbox" aria-label="Actions">
-        @* Fixed row height (h-7 = 28px) keeps virtualisation exact. *@
-        <Virtualize Items="List.Rows" ItemSize="28" Context="row">
-            @{ var selected = row.Entry.Sequence == List.Selected?.Sequence; }
-            <div class="action-row @(selected ? "action-row-selected" : "") @(row.Dimmed ? "opacity-45" : "")"
-                 role="option" aria-selected="@(selected ? "true" : "false")" data-dimmed="@(row.Dimmed ? "true" : "false")"
-                 data-test="action-row" @key="row.Entry.Sequence" @onclick="() => Select(row.Entry.Sequence)">
-                <span class="w-12 shrink-0 text-right text-zinc-500 tabular-nums" data-test="sequence">@row.Entry.Sequence</span>
-                <span class="min-w-0 flex-1 truncate font-mono" data-test="type" title="@row.Entry.ActionType">@row.ShortName</span>
-                @{ var local = row.Entry.Timestamp.ToLocalTime(); }
-                <span class="shrink-0 text-zinc-500 tabular-nums" data-test="time"
-                      title="@local.ToString("yyyy-MM-dd HH:mm:ss.fff zzz")">@local.ToString("HH:mm:ss.fff")</span>
-            </div>
-        </Virtualize>
+    <div class="relative min-h-0 flex-1">
+        <div class="h-full overflow-auto" role="listbox" aria-label="Actions" @ref="scroller">
+            @* Fixed row height (h-7 = 28px) keeps virtualisation exact. *@
+            <Virtualize Items="List.Rows" ItemSize="28" Context="row">
+                @{ var selected = row.Entry.Sequence == List.Selected?.Sequence; }
+                <div class="action-row @(selected ? "action-row-selected" : "") @(row.Dimmed ? "opacity-45" : "")"
+                     role="option" aria-selected="@(selected ? "true" : "false")" data-dimmed="@(row.Dimmed ? "true" : "false")"
+                     data-test="action-row" @key="row.Entry.Sequence" @onclick="() => Select(row.Entry.Sequence)">
+                    <span class="w-12 shrink-0 text-right text-zinc-500 tabular-nums" data-test="sequence">@row.Entry.Sequence</span>
+                    <span class="min-w-0 flex-1 truncate font-mono" data-test="type" title="@row.Entry.ActionType">@row.ShortName</span>
+                    @{ var local = row.Entry.Timestamp.ToLocalTime(); }
+                    <span class="shrink-0 text-zinc-500 tabular-nums" data-test="time"
+                          title="@local.ToString("yyyy-MM-dd HH:mm:ss.fff zzz")">@local.ToString("HH:mm:ss.fff")</span>
+                </div>
+            </Virtualize>
+        </div>
+        @if (List.NewCount > 0)
+        {
+            <button class="absolute right-3 bottom-3 rounded-full bg-sky-600 px-3 py-1 text-sm text-white shadow-md hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400"
+                    data-test="new-actions" @onclick="Resume">▼ @List.NewCount new</button>
+        }
     </div>
 }
 
@@ -49,6 +58,37 @@ else
 
     /// <summary>Raised when the developer selects an Action, after <see cref="List"/> has recorded it.</summary>
     [Parameter] public EventCallback SelectedChanged { get; set; }
+
+    private ElementReference scroller;
+    private IJSObjectReference? module;
+
+    // The newest row the list last scrolled to while following; null while paused, so resuming scrolls again.
+    private ActionEntry? scrolledTo;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var newest = List.Following && List.Rows is [.., var last] ? last.Entry : null;
+        if (ReferenceEquals(newest, scrolledTo))
+            return;
+        scrolledTo = newest;
+        if (newest is null)
+            return;
+        module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/ActionListPane.razor.js");
+        await module.InvokeVoidAsync("scrollToBottom", scroller);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (module is not null)
+                await module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is gone, and the module with it.
+        }
+    }
 
     private void OnFilter(ChangeEventArgs e)
     {
@@ -63,6 +103,12 @@ else
     }
 
     private void ShowAll() => List.ShowAll();
+
+    private Task Resume()
+    {
+        List.Resume();
+        return SelectedChanged.InvokeAsync();
+    }
 
     private Task Select(long sequence)
     {

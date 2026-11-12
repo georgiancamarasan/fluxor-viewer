@@ -97,32 +97,33 @@ public class ActionListTests
     {
         var session = Session(Action(1, "App.A"), Action(2, "App.B"));
         list.Update(session, null);
-        list.Select(2);
+        list.Select(1);
 
-        list.Filter = "A";
+        list.Filter = "B";
         list.Update(session, null);
 
-        Assert.Equal([1], Sequences);
-        Assert.Equal(2, list.Selected?.Sequence);
+        Assert.Equal([2], Sequences);
+        Assert.Equal(1, list.Selected?.Sequence);
     }
 
     [Fact]
-    public void Switching_Session_clears_the_selection_but_keeps_filter_and_toggle()
+    public void Switching_Session_follows_its_newest_Action_and_keeps_filter_and_toggle()
     {
-        list.Update(Session(Action(1)), null);
+        list.Update(Session(Action(1), Action(2)), null);
         list.Select(1);
         list.Filter = "Incr";
         list.ChangedOnly = true;
 
-        list.Update(Session(Action(1)), null);
+        list.Update(Session(Action(7)), null);
 
-        Assert.Null(list.Selected);
+        Assert.True(list.Following);
+        Assert.Equal(7, list.Selected?.Sequence);
         Assert.Equal("Incr", list.Filter);
         Assert.True(list.ChangedOnly);
     }
 
     [Fact]
-    public void An_Action_leaving_the_History_clears_the_selection()
+    public void An_Action_leaving_the_History_resumes_follow_mode()
     {
         var id = Guid.NewGuid();
         list.Update(Session(id, Action(1), Action(2)), null);
@@ -130,28 +131,111 @@ public class ActionListTests
 
         list.Update(Session(id, Action(2), Action(3)), null);
 
-        Assert.Null(list.Selected);
+        Assert.True(list.Following);
+        Assert.Equal(3, list.Selected?.Sequence);
     }
 
     [Fact]
     public void The_selection_follows_the_latest_copy_of_its_Action()
     {
         var id = Guid.NewGuid();
-        list.Update(Session(id, Action(1)), null);
+        list.Update(Session(id, Action(1), Action(2)), null);
         list.Select(1);
 
-        list.Update(Session(id, Action(1), Action(2)), null);
+        list.Update(Session(id, Action(1), Action(2), Action(3)), null);
 
         Assert.Equal(1, list.Selected?.Sequence);
+    }
+
+    // UI-7: follow mode.
+
+    [Fact]
+    public void Follow_mode_is_on_by_default_and_selects_the_newest_Action()
+    {
+        list.Update(Session(Action(1), Action(2)), null);
+
+        Assert.True(list.Following);
+        Assert.Equal(2, list.Selected?.Sequence);
+    }
+
+    [Fact]
+    public void Follow_mode_selects_the_newest_visible_row_or_nothing_when_none_is_visible()
+    {
+        var session = Session(Action(1, "App.A"), Action(2, "App.B"));
+
+        list.Filter = "A";
+        list.Update(session, null);
+        Assert.Equal(1, list.Selected?.Sequence);
+
+        list.Filter = "nothing";
+        list.Refilter();
+        Assert.Null(list.Selected);
+        Assert.True(list.Following);
+    }
+
+    [Fact]
+    public void Selecting_the_newest_visible_row_keeps_follow_mode_on()
+    {
+        list.Update(Session(Action(1), Action(2)), null);
+
+        list.Select(2);
+
+        Assert.True(list.Following);
+    }
+
+    [Fact]
+    public void While_paused_new_Actions_are_counted_instead_of_selected()
+    {
+        var id = Guid.NewGuid();
+        list.Update(Session(id, Action(1), Action(2)), null);
+        list.Select(1);
+        Assert.False(list.Following);
+        Assert.Equal(0, list.NewCount);
+
+        list.Update(Session(id, Action(1), Action(2), Action(3), Action(4)), null);
+
+        Assert.Equal(1, list.Selected?.Sequence);
+        Assert.Equal(2, list.NewCount);
+    }
+
+    [Fact]
+    public void Only_visible_new_Actions_are_counted()
+    {
+        var id = Guid.NewGuid();
+        list.Update(Session(id, Action(1, "App.A"), Action(2, "App.A")), null);
+        list.Select(1);
+        list.Update(Session(id, Action(1, "App.A"), Action(2, "App.A"), Action(3, "App.A"), Action(4, "App.B")), null);
+
+        list.Filter = "A";
+        list.Refilter();
+
+        Assert.Equal(1, list.NewCount);
+    }
+
+    [Fact]
+    public void Resuming_selects_the_newest_visible_row_and_clears_the_count()
+    {
+        var id = Guid.NewGuid();
+        list.Update(Session(id, Action(1), Action(2)), null);
+        list.Select(1);
+        list.Update(Session(id, Action(1), Action(2), Action(3)), null);
+
+        list.Resume();
+
+        Assert.True(list.Following);
+        Assert.Equal(3, list.Selected?.Sequence);
+        Assert.Equal(0, list.NewCount);
     }
 
     [Fact]
     public void Selecting_an_unknown_Sequence_is_ignored()
     {
-        list.Update(Session(Action(1)), null);
+        list.Update(Session(Action(1), Action(2)), null);
+        list.Select(1);
 
         list.Select(9);
 
-        Assert.Null(list.Selected);
+        Assert.Equal(1, list.Selected?.Sequence);
+        Assert.False(list.Following);
     }
 }

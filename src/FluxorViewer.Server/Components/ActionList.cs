@@ -7,11 +7,12 @@ namespace FluxorViewer.Server.Components;
 public sealed record ActionRow(ActionEntry Entry, string ShortName, bool Dimmed);
 
 /// <summary>
-/// The rows one Viewer tab's Action list shows, and which Action it has selected.
+/// The rows one Viewer tab's Action list shows, which Action it has selected, and follow mode.
 /// </summary>
 /// <remarks>
 /// The filter and the "changed only" toggle belong to the tab and survive switching Session. The selection is by
-/// Sequence: it's cleared when the Session changes or the Action leaves the History, and kept while its row is hidden.
+/// Sequence and kept while its row is hidden. While following, it's the newest visible row; selecting any other row
+/// pauses follow mode, and losing the selection (switching Session, the Action leaving the History) resumes it.
 /// </remarks>
 public sealed class ActionList
 {
@@ -33,9 +34,35 @@ public sealed class ActionList
 
     public ActionEntry? Selected { get; private set; }
 
-    /// <summary>The developer clicked a row. Sequences no longer in the History are ignored.</summary>
-    public void Select(long sequence) =>
-        Selected = actions.FirstOrDefault(a => a.Sequence == sequence) ?? Selected;
+    /// <summary>Follow mode: the newest visible row stays selected as Actions arrive.</summary>
+    public bool Following { get; private set; } = true;
+
+    /// <summary>Visible rows that arrived since follow mode paused; 0 while following.</summary>
+    public int NewCount { get; private set; }
+
+    // The newest Sequence in the History when follow mode paused.
+    private long pausedAt;
+
+    /// <summary>
+    /// The developer clicked a row. The newest visible row turns follow mode on, any other pauses it. Sequences no
+    /// longer in the History are ignored.
+    /// </summary>
+    public void Select(long sequence)
+    {
+        if (actions.FirstOrDefault(a => a.Sequence == sequence) is not { } action)
+            return;
+        Selected = action;
+        Following = Rows is [.., var newest] && newest.Entry.Sequence == sequence;
+        pausedAt = actions[^1].Sequence;
+        Refilter();
+    }
+
+    /// <summary>Turns follow mode back on (the "▼ N new" pill), selecting the newest visible row.</summary>
+    public void Resume()
+    {
+        Following = true;
+        Refilter();
+    }
 
     /// <summary>Clears the filter and the toggle.</summary>
     public void ShowAll()
@@ -56,6 +83,8 @@ public sealed class ActionList
 
         // Re-point the selection at the latest copy of its Action, or drop it if Clear or the cap removed it.
         Selected = Selected is { } selected ? actions.FirstOrDefault(a => a.Sequence == selected.Sequence) : null;
+        if (Selected is null)
+            Following = true;
         Refilter();
     }
 
@@ -76,6 +105,9 @@ public sealed class ActionList
             rows.Add(new ActionRow(action, name, dimmed));
         }
         Rows = [.. rows];
+        if (Following)
+            Selected = Rows is [.., var newest] ? newest.Entry : null;
+        NewCount = Following ? 0 : Rows.Count(r => r.Entry.Sequence > pausedAt);
     }
 
     private string ShortName(string actionType)

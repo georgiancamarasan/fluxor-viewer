@@ -12,7 +12,16 @@ public class HomePageTests : BunitContext
 {
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance);
 
-    public HomePageTests() => Services.AddSingleton(registry);
+    // The Action list's scrolling, recorded rather than run.
+    private readonly BunitJSModuleInterop scroll;
+
+    public HomePageTests()
+    {
+        Services.AddSingleton(registry);
+        Services.AddSingleton(TimeProvider.System);
+        scroll = JSInterop.SetupModule("./Components/ActionListPane.razor.js");
+        scroll.SetupVoid("scrollToBottom", _ => true);
+    }
 
     private static Snapshot NewSnapshot(Guid sessionId, string appName = "MyApp", Runtime runtime = Runtime.WebAssembly, params string[] features) => new(
         ProtocolVersion.Current, sessionId, appName, runtime, DateTimeOffset.UtcNow, 0, 0,
@@ -304,7 +313,7 @@ public class HomePageTests : BunitContext
     }
 
     [Fact]
-    public void Clicking_a_row_selects_it_and_switching_Session_clears_the_selection()
+    public void Clicking_an_older_row_selects_it_and_switching_Session_follows_the_newest_again()
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
@@ -312,14 +321,14 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 2, "App.B");
         var page = Render<Home>();
         page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
-        Assert.Empty(page.FindAll("[data-test=action-row][aria-selected=true]"));
+        Assert.Equal("B", SelectedRow(page));
 
-        page.FindAll("[data-test=action-row]")[1].Click();
-        Assert.Equal("B", page.Find("[data-test=action-row][aria-selected=true] [data-test=type]").TextContent.Trim());
+        page.FindAll("[data-test=action-row]")[0].Click();
+        Assert.Equal("A", SelectedRow(page));
 
         page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
         page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
-        Assert.Empty(page.FindAll("[data-test=action-row][aria-selected=true]"));
+        Assert.Equal("B", SelectedRow(page));
     }
 
     [Fact]
@@ -334,20 +343,82 @@ public class HomePageTests : BunitContext
     }
 
     [Fact]
-    public void Clearing_a_connected_Session_empties_the_list_and_the_selection()
+    public void Clearing_a_connected_Session_empties_the_list_and_follows_the_next_Action()
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
-        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        Dispatch("c1", Id("aaaa"), 1, "App.A", "Counter");
+        Dispatch("c1", Id("aaaa"), 2, "App.B", "Counter");
         var page = Render<Home>();
-        page.Find("[data-test=action-row]").Click();
+        page.FindAll("[data-test=action-row]")[0].Click();
 
         registry.Clear(Id("aaaa"));
         page.WaitForAssertion(() => Assert.NotNull(page.Find("[data-test=no-actions]")));
 
-        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
-        page.WaitForAssertion(() => Assert.Equal(["Increment"], Rows(page)));
-        Assert.Empty(page.FindAll("[data-test=action-row][aria-selected=true]"));
+        Dispatch("c1", Id("aaaa"), 3, "App.C", "Counter");
+        page.WaitForAssertion(() => Assert.Equal("C", SelectedRow(page)));
     }
+
+    [Fact]
+    public void While_paused_new_Actions_show_a_pill_that_resumes_follow_mode()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        Dispatch("c1", Id("aaaa"), 1, "App.A");
+        Dispatch("c1", Id("aaaa"), 2, "App.B");
+        var page = Render<Home>();
+        page.FindAll("[data-test=action-row]")[0].Click();
+        Assert.Empty(page.FindAll("[data-test=new-actions]"));
+
+        Dispatch("c1", Id("aaaa"), 3, "App.C");
+        Dispatch("c1", Id("aaaa"), 4, "App.D");
+        page.WaitForAssertion(() => Assert.Equal("▼ 2 new", page.Find("[data-test=new-actions]").TextContent.Trim()));
+        Assert.Equal("A", SelectedRow(page));
+
+        page.Find("[data-test=new-actions]").Click();
+
+        Assert.Equal("D", SelectedRow(page));
+        Assert.Empty(page.FindAll("[data-test=new-actions]"));
+    }
+
+    private int Scrolls => scroll.Invocations["scrollToBottom"].Count;
+
+    [Fact]
+    public void The_list_scrolls_to_the_newest_Action_only_while_following()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        Dispatch("c1", Id("aaaa"), 1, "App.A");
+        Dispatch("c1", Id("aaaa"), 2, "App.B");
+        var page = Render<Home>();
+        page.WaitForAssertion(() => Assert.Equal(1, Scrolls));
+
+        Dispatch("c1", Id("aaaa"), 3, "App.C");
+        page.WaitForAssertion(() => Assert.Equal(2, Scrolls));
+
+        page.FindAll("[data-test=action-row]")[0].Click();
+        Dispatch("c1", Id("aaaa"), 4, "App.D");
+        page.WaitForAssertion(() => Assert.NotNull(page.Find("[data-test=new-actions]")));
+        Assert.Equal(2, Scrolls);
+
+        page.Find("[data-test=new-actions]").Click();
+        page.WaitForAssertion(() => Assert.Equal(3, Scrolls));
+    }
+
+    [Fact]
+    public void A_burst_of_Actions_renders_a_few_times_and_ends_on_the_newest()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
+        var page = Render<Home>();
+        var rendersBefore = page.RenderCount;
+
+        for (var sequence = 1; sequence <= 5000; sequence++)
+            Dispatch("c1", Id("aaaa"), sequence, "App.Increment", "Counter");
+
+        page.WaitForAssertion(() => Assert.Equal("CounterState · after #5000 Increment", Header(page)));
+        // ~10 renders a second: far fewer than one per Action however long the burst took to send.
+        Assert.InRange(page.RenderCount - rendersBefore, 1, 100);
+    }
+
+    private static string? SelectedRow(IRenderedComponent<Home> page) =>
+        page.FindAll("[data-test=action-row][aria-selected=true] [data-test=type]").SingleOrDefault()?.TextContent.Trim();
 
     private static string Header(IRenderedComponent<Home> page) => page.Find("[data-test=state-header]").TextContent.Trim();
 
@@ -370,17 +441,30 @@ public class HomePageTests : BunitContext
     }
 
     [Fact]
-    public void With_no_Action_selected_it_shows_the_current_state_and_follows_it_live()
+    public void Without_Actions_it_shows_the_current_state()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
+
+        var page = Render<Home>();
+
+        Assert.Equal("CounterState · current", Header(page));
+    }
+
+    [Fact]
+    public void Follow_mode_selects_each_new_Action_and_shows_the_state_after_it()
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
         var page = Render<Home>();
 
-        Assert.Equal("CounterState · current", Header(page));
-        Assert.Equal(["1"], Values(page));
+        Assert.Equal("CounterState · after #1 Increment", Header(page));
 
         Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
-        page.WaitForAssertion(() => Assert.Equal(["2"], Values(page)));
+        page.WaitForAssertion(() =>
+        {
+            Assert.Equal("CounterState · after #2 Increment", Header(page));
+            Assert.Equal(["2"], Values(page));
+        });
     }
 
     [Fact]

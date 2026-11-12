@@ -1,6 +1,7 @@
 @page "/"
 @implements IDisposable
 @inject SessionRegistry Registry
+@inject TimeProvider Time
 
 <PageTitle>Fluxor Viewer</PageTitle>
 
@@ -49,6 +50,7 @@
     private readonly FeatureSelection features = new();
     private readonly ActionList actions = new();
     private IReadOnlyList<ReceivedSession> sessions = [];
+    private RenderThrottle? throttle;
 
     // The State tab's expand/collapse choices, per Feature name for this Viewer tab.
     private readonly Dictionary<string, Dictionary<string, bool>> toggles = [];
@@ -56,20 +58,24 @@
     protected override void OnInitialized()
     {
         Refresh();
+        // A burst of Actions re-reads and renders about 10 times a second, not once per batch.
+        throttle = new RenderThrottle(Time, TimeSpan.FromMilliseconds(100), () => _ = InvokeAsync(() =>
+        {
+            Refresh();
+            StateHasChanged();
+        }));
         Registry.Changed += OnChanged;
     }
 
     private void OnChanged(SessionChange change)
     {
-        _ = InvokeAsync(() =>
-        {
-            // Actions in other Sessions don't matter here. For the selected one they're re-read: a Snapshot for a
-            // still-connected Session raises no change of its own, and may have brought a different set of Features.
-            if (change is EntriesAppended && change.SessionId != selection.Selected)
-                return;
-            Refresh();
-            StateHasChanged();
-        });
+        // Actions in other Sessions don't matter here. For the selected one they're re-read: a Snapshot for a
+        // still-connected Session raises no change of its own, and may have brought a different set of Features.
+        // Reading the selection off the render thread is safe: switching Session re-reads the registry itself, so an
+        // Action skipped here for a Session that was just being selected is still shown.
+        if (change is EntriesAppended && change.SessionId != selection.Selected)
+            return;
+        throttle?.Request();
     }
 
     private void Refresh()
@@ -105,5 +111,9 @@
         actions.Update(session, features.Selected);
     }
 
-    public void Dispose() => Registry.Changed -= OnChanged;
+    public void Dispose()
+    {
+        Registry.Changed -= OnChanged;
+        throttle?.Dispose();
+    }
 }

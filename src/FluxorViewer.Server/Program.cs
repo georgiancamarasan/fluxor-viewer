@@ -4,6 +4,7 @@ using FluxorViewer.Server.Sessions;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<SessionRegistry>();
 builder.Services.AddSingleton<ISessionRegistry>(sp => sp.GetRequiredService<SessionRegistry>());
 builder.Services.AddSingleton<IngestRejections>();
