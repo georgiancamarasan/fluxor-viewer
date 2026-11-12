@@ -175,25 +175,27 @@ internal sealed class SessionReporter(
     {
         while (true)
         {
-            // Check again after each Snapshot: Actions may have been dropped meanwhile, making another one due.
-            if (TakeBaseIfSnapshotDue() is { } baseCopy)
+            switch (TakeNext())
             {
-                if (!await TrySendSnapshotAsync(connection, session, baseCopy, cancellationToken))
-                    return false;
-                continue;
+                case BaseCopy baseCopy:
+                    if (!await TrySendSnapshotAsync(connection, session, baseCopy, cancellationToken))
+                        return false;
+                    break;
+                case Batch { Actions.Count: 0 }:
+                    await WaitForWorkAsync(connection, cancellationToken);
+                    break;
+                case Batch batch:
+                    await SendBatchAsync(connection, session, batch, cancellationToken);
+                    break;
             }
-
-            var batch = TakeBatch();
-            if (batch.Count == 0)
-            {
-                await WaitForWorkAsync(connection, cancellationToken);
-                continue;
-            }
-
-            var messages = batch.Select(p => TrySerialise(session, p)).OfType<ActionRecorded>().ToArray();
-            if (messages.Length > 0)
-                await connection.SendActionsAsync(messages, cancellationToken);
         }
+    }
+
+    private async Task SendBatchAsync(IViewerConnection connection, SessionInfo session, Batch batch, CancellationToken cancellationToken)
+    {
+        var messages = batch.Actions.Select(p => TrySerialise(session, p)).OfType<ActionRecorded>().ToArray();
+        if (messages.Length > 0)
+            await connection.SendActionsAsync(messages, cancellationToken);
     }
 
     /// <summary>
@@ -226,36 +228,32 @@ internal sealed class SessionReporter(
         }
     }
 
-    /// <summary>A copy of the base to send as a Snapshot, if one is due (on connecting, or after a drop).</summary>
-    private BaseCopy? TakeBaseIfSnapshotDue()
-    {
-        lock (gate)
-        {
-            if (!snapshotDue)
-                return null;
-            snapshotDue = false;
-            return new BaseCopy(
-                baseSequence, droppedCount, features.Select((f, i) => new TrackedState(f, baseStates[i])).ToArray());
-        }
-    }
-
     /// <summary>
-    /// Takes up to <see cref="MaxBatchSize"/> buffered Actions. They count as delivered from here on: the base moves
-    /// past them, so a later Snapshot never rewinds below them.
+    /// What to send next, decided under one lock so a drop can never slip between the two: a copy of the base when a
+    /// Snapshot is due (on connecting, or after a drop), otherwise up to <see cref="MaxBatchSize"/> buffered Actions,
+    /// possibly none. Taken Actions count as delivered: the base moves past them, so a later Snapshot never rewinds below
+    /// them.
     /// </summary>
-    private List<PendingAction> TakeBatch()
+    private Outgoing TakeNext()
     {
         lock (gate)
         {
-            signalled = false;
-            var batch = new List<PendingAction>(Math.Min(buffer.Count, MaxBatchSize));
-            while (batch.Count < MaxBatchSize && buffer.TryDequeue(out var pending))
+            if (snapshotDue)
             {
-                MoveBasePast(pending);
-                batch.Add(pending);
+                snapshotDue = false;
+                return new BaseCopy(
+                    baseSequence, droppedCount, features.Select((f, i) => new TrackedState(f, baseStates[i])).ToArray());
             }
 
-            return batch;
+            signalled = false;
+            var actions = new List<PendingAction>(Math.Min(buffer.Count, MaxBatchSize));
+            while (actions.Count < MaxBatchSize && buffer.TryDequeue(out var pending))
+            {
+                MoveBasePast(pending);
+                actions.Add(pending);
+            }
+
+            return new Batch(actions);
         }
     }
 
@@ -316,7 +314,12 @@ internal sealed class SessionReporter(
     /// The base and the drops not yet reported, copied under the lock to be serialised into a Snapshot outside it
     /// (the states are immutable).
     /// </summary>
-    private sealed record BaseCopy(long LastSequence, long DroppedCount, TrackedState[] Features);
+    /// <summary>What the sender takes from the buffer to send next.</summary>
+    private abstract record Outgoing;
+
+    private sealed record BaseCopy(long LastSequence, long DroppedCount, TrackedState[] Features) : Outgoing;
+
+    private sealed record Batch(IReadOnlyList<PendingAction> Actions) : Outgoing;
 
     /// <summary>Stops buffering for good: nothing more will be sent.</summary>
     private void Stop()

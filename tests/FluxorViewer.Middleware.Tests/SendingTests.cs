@@ -71,6 +71,42 @@ public class SendingTests
     }
 
     [Fact]
+    public async Task Every_gap_the_Viewer_sees_between_Actions_is_covered_by_a_Snapshot_even_while_dropping_constantly()
+    {
+        await using var harness = new Harness(bufferSize: 2);
+        var (connection, _) = await harness.StartConnected();
+
+        for (var i = 0; i < 20_000; i++) // 2..20001, racing the sender with a full buffer.
+            harness.Dispatcher.Dispatch(new IncrementAction());
+        await Wait.Until(() => connection.Sent.LastOrDefault() is ActionRecorded { Sequence: 20_001 });
+
+        Assert.Empty(UncoveredGaps(connection.Sent));
+    }
+
+    /// <summary>
+    /// Each Action whose Sequence doesn't follow on from the Action or Snapshot before it, which the Viewer would build
+    /// on the wrong state (ADR 0005).
+    /// </summary>
+    private static List<long> UncoveredGaps(IEnumerable<object> sent)
+    {
+        List<long> gaps = [];
+        long last = 0;
+        foreach (var message in sent)
+        {
+            if (message is ActionRecorded action && action.Sequence != last + 1)
+                gaps.Add(action.Sequence);
+            last = message switch
+            {
+                Snapshot snapshot => snapshot.LastSequence,
+                ActionRecorded recorded => recorded.Sequence,
+                _ => last,
+            };
+        }
+
+        return gaps;
+    }
+
+    [Fact]
     public async Task The_drop_count_resets_after_each_Snapshot()
     {
         await using var harness = new Harness(bufferSize: 5);
