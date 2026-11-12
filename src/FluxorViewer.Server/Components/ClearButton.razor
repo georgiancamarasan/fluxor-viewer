@@ -1,0 +1,80 @@
+@using System.Globalization
+
+@if (prompting && Session is { } session)
+{
+    @* The text comes first so the confirm button doesn't land where Clear was: a double-click can't confirm. *@
+    <div class="flex items-center gap-2" role="alertdialog" aria-label="Confirm Clear" data-test="clear-prompt" @onkeydown="OnKeyDown">
+        <span class="text-sm" data-test="clear-question">@Question(session)</span>
+        <button class="control border-red-300 text-red-700 dark:border-red-800 dark:text-red-400" data-test="clear-confirm" @onclick="Confirm">Clear</button>
+        <button class="control" data-test="clear-cancel" @ref="cancel" @onclick="Cancel">Cancel</button>
+    </div>
+}
+else
+{
+    <button class="control" disabled="@(!CanClear)" data-test="clear" @onclick="Open">Clear</button>
+}
+
+@code {
+    /// <summary>The selected Session, or null when none is.</summary>
+    [Parameter] public ReceivedSession? Session { get; set; }
+
+    /// <summary>The developer confirmed clearing this Session.</summary>
+    [Parameter] public EventCallback<Guid> Cleared { get; set; }
+
+    private bool prompting;
+    private Guid promptedFor;
+    private bool focusCancel;
+    private ElementReference cancel;
+
+    // A connected Session with an empty History has nothing to clear; a disconnected one can still be removed.
+    private bool CanClear => Session is { } s && (s.Status == SessionStatus.Disconnected || s.History.Count > 0);
+
+    protected override void OnParametersSet()
+    {
+        // Another Session was selected (or this one followed a reloaded app), or another Viewer tab cleared it first.
+        if (prompting && (Session?.SessionId != promptedFor || !CanClear))
+            prompting = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!focusCancel)
+            return;
+        focusCancel = false;
+        if (prompting)
+            await cancel.FocusAsync();
+    }
+
+    private void Open()
+    {
+        if (!CanClear)
+            return;
+        prompting = true;
+        promptedFor = Session!.SessionId;
+        focusCancel = true;
+    }
+
+    private void Cancel() => prompting = false;
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            Cancel();
+    }
+
+    private async Task Confirm()
+    {
+        prompting = false;
+        await Cleared.InvokeAsync(promptedFor);
+    }
+
+    /// <summary>Says what Clear will do given the status now: a disconnected Session goes, a connected one loses its History.</summary>
+    private static string Question(ReceivedSession session)
+    {
+        var name = $"{session.AppName} · {session.ShortId}";
+        if (session.Status == SessionStatus.Disconnected)
+            return $"Remove disconnected Session {name}?";
+        var count = session.Actions.Count();
+        return $"Clear {count.ToString("N0", CultureInfo.InvariantCulture)} {(count == 1 ? "Action" : "Actions")} from {name}?";
+    }
+}

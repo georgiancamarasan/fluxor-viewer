@@ -10,7 +10,7 @@
         <SessionPicker Sessions="sessions" Selected="selection.Selected" SelectedChanged="Select" />
         <FeaturePicker Features="features.Features" HasSession="selection.Selected is not null"
                        Selected="@features.Selected" SelectedChanged="SelectFeature" />
-        <button class="control" disabled data-test="clear">Clear</button>
+        <ClearButton Session="SelectedSession" Cleared="Clear" />
     </header>
 
     @if (sessions.Count == 0)
@@ -120,6 +120,13 @@
         selection.Select(sessionId);
         selection.Update(sessions);
         UpdateSelectedSession();
+    }
+
+    // Re-read at once rather than waiting for the throttled SessionCleared, so the Clear shows without a delay here.
+    private void Clear(Guid sessionId)
+    {
+        Registry.Clear(sessionId);
+        Refresh();
     }
 
     private void SelectFeature(string featureName)

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FluxorViewer.Server.Tests;
 
-// UI-1 to UI-6: the layout shell, Session and Feature pickers, Action list, State and Diff tabs, and payload strip, against a real registry.
+// UI-1 to UI-8: the layout shell, Session and Feature pickers, Action list, State and Diff tabs, payload strip and Clear, against a real registry.
 public class HomePageTests : BunitContext
 {
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance);
@@ -810,5 +810,172 @@ public class HomePageTests : BunitContext
         page.FindAll("[data-test=action-row]")[1].Click();
         Assert.Empty(page.FindAll("[data-test=payload-error]"));
         Assert.Equal("""{"$error":"not really","count":1}""", PayloadLine(page));
+    }
+
+    private static void OpenClear(IRenderedComponent<Home> page) => page.Find("[data-test=clear]").Click();
+
+    private static string ClearQuestion(IRenderedComponent<Home> page) => page.Find("[data-test=clear-question]").TextContent;
+
+    private static bool ClearEnabled(IRenderedComponent<Home> page) => !page.Find("[data-test=clear]").HasAttribute("disabled");
+
+    [Fact]
+    public void Clear_is_disabled_without_a_selected_Session_or_with_nothing_to_clear()
+    {
+        var page = Render<Home>();
+        Assert.False(ClearEnabled(page));
+
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
+        page.WaitForAssertion(() => Assert.Equal(2, Options(page).Length));
+        Assert.False(ClearEnabled(page)); // none picked
+
+        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        Assert.False(ClearEnabled(page)); // connected, empty History
+
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        page.WaitForAssertion(() => Assert.True(ClearEnabled(page)));
+
+        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        registry.ConnectionClosed("c2");
+        page.WaitForAssertion(() => Assert.True(ClearEnabled(page))); // disconnected, empty History: can be removed
+    }
+
+    [Fact]
+    public void Clearing_a_connected_Session_empties_its_Action_list_and_keeps_recording()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        var page = Render<Home>();
+
+        OpenClear(page);
+        Assert.Equal("Clear 2 Actions from MyApp · aaaa?", ClearQuestion(page));
+        page.Find("[data-test=clear-confirm]").Click();
+
+        Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
+        Assert.Equal(Id("aaaa").ToString(), page.Find("[data-test=session-picker] select").GetAttribute("value"));
+        Assert.NotNull(page.Find("[data-test=no-actions]"));
+        var state = page.Find("[role=tabpanel]").TextContent;
+        Assert.Contains("· current", state);
+        Assert.Contains("2", state); // the current state is kept
+        Assert.False(ClearEnabled(page));
+
+        Dispatch("c1", Id("aaaa"), 3, "App.Decrement", "Counter");
+        page.WaitForAssertion(() => Assert.Equal(["Decrement"], Rows(page)));
+    }
+
+    [Fact]
+    public void Clearing_a_disconnected_Session_removes_it()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
+        registry.ConnectionClosed("c1");
+        var page = Render<Home>();
+        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+
+        OpenClear(page);
+        Assert.Equal("Remove disconnected Session MyApp · aaaa?", ClearQuestion(page));
+        page.Find("[data-test=clear-confirm]").Click();
+
+        Assert.Equal(["● Other · WebAssembly · bbbb"], Options(page));
+        Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker] select").GetAttribute("value")); // the only one left
+    }
+
+    [Fact]
+    public void The_prompt_puts_its_text_first_and_focuses_Cancel()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        var page = Render<Home>();
+
+        OpenClear(page);
+
+        var prompt = page.Find("[data-test=clear-prompt]");
+        Assert.Equal(["clear-question", "clear-confirm", "clear-cancel"], prompt.Children.Select(c => c.GetAttribute("data-test")));
+        JSInterop.VerifyFocusAsyncInvoke();
+    }
+
+    [Fact]
+    public void Cancel_and_Escape_close_the_prompt_without_clearing()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        var page = Render<Home>();
+
+        OpenClear(page);
+        page.Find("[data-test=clear-cancel]").Click();
+        Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
+
+        OpenClear(page);
+        page.Find("[data-test=clear-prompt]").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Escape" });
+        Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
+
+        Assert.Single(registry.Find(Id("aaaa"))!.Actions);
+    }
+
+    [Fact]
+    public void The_prompt_follows_the_Sessions_status_and_count_as_they_change()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        var page = Render<Home>();
+        OpenClear(page);
+        Assert.Equal("Clear 1 Action from MyApp · aaaa?", ClearQuestion(page));
+
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        page.WaitForAssertion(() => Assert.Equal("Clear 2 Actions from MyApp · aaaa?", ClearQuestion(page)));
+
+        registry.ConnectionClosed("c1");
+        page.WaitForAssertion(() => Assert.Equal("Remove disconnected Session MyApp · aaaa?", ClearQuestion(page)));
+
+        page.Find("[data-test=clear-confirm]").Click();
+        page.WaitForAssertion(() => Assert.NotNull(page.Find("[data-test=waiting]"))); // the click can queue behind a throttled render
+    }
+
+    [Fact]
+    public void Selecting_another_Session_cancels_the_prompt()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        var page = Render<Home>();
+        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        OpenClear(page);
+
+        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+
+        Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
+    }
+
+    [Fact]
+    public void Following_a_reloaded_app_cancels_the_prompt()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        var page = Render<Home>();
+        registry.ConnectionClosed("c1");
+        page.WaitForAssertion(() => Assert.True(ClearEnabled(page)));
+        OpenClear(page);
+
+        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb")));
+
+        page.WaitForAssertion(() => Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker] select").GetAttribute("value")));
+        Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
+    }
+
+    [Fact]
+    public void A_Clear_in_another_Viewer_tab_shows_here_and_cancels_the_prompt()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        var here = Render<Home>();
+        var there = Render<Home>();
+        OpenClear(here);
+
+        OpenClear(there);
+        there.Find("[data-test=clear-confirm]").Click();
+
+        here.WaitForAssertion(() => Assert.NotNull(here.Find("[data-test=no-actions]")));
+        Assert.Empty(here.FindAll("[data-test=clear-prompt]"));
+        Assert.False(ClearEnabled(here));
     }
 }
