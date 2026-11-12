@@ -137,7 +137,7 @@ public class UseFluxorViewerTests
         Services(o => o.UseFluxorViewer(v => { v.Enabled = true; v.MaxDepth = maxDepth; }));
 
     [Fact]
-    public void All_problems_are_reported_together()
+    public void All_problems_are_reported_together_on_one_line()
     {
         var ex = Assert.Throws<ArgumentException>(() =>
             Services(o => o.UseFluxorViewer(v =>
@@ -153,6 +153,7 @@ public class UseFluxorViewerTests
         Assert.Contains("AppName", ex.Message);
         Assert.Contains("BufferSize", ex.Message);
         Assert.Contains("MaxDepth", ex.Message);
+        Assert.DoesNotContain('\n', ex.Message);
     }
 
     [Fact]

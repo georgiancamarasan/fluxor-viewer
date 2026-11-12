@@ -42,35 +42,43 @@ public sealed class FluxorViewerOptions
         return this;
     }
 
+    /// <summary>Checks every option; throws for the first problem alone, or for all of them on one line.</summary>
+    /// <exception cref="ArgumentException">An option is invalid (<see cref="ArgumentOutOfRangeException"/> for a number).</exception>
     internal void Validate()
     {
-        var problems = new List<(string Option, string Message)>();
-
-        if (!Uri.TryCreate(ServerUrl, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-            problems.Add((nameof(ServerUrl), $"ServerUrl '{ServerUrl}' must be an absolute http or https URL."));
-
-        if (string.IsNullOrWhiteSpace(AppName))
-            problems.Add((nameof(AppName), "AppName must not be blank."));
-
-        if (BufferSize < 1)
-            problems.Add((nameof(BufferSize), $"BufferSize must be at least 1, but was {BufferSize}."));
-
-        if (MaxDepth is < 1 or > JsonLimits.MaxDepth)
-            problems.Add((nameof(MaxDepth), $"MaxDepth must be between 1 and {JsonLimits.MaxDepth}, but was {MaxDepth}."));
-
-        switch (problems)
+        switch (Problems().ToList())
         {
             case []:
                 return;
-            case [(nameof(BufferSize), var message)]:
-                throw new ArgumentOutOfRangeException(nameof(BufferSize), BufferSize, $"FluxorViewer: {message}");
-            case [(nameof(MaxDepth), var message)]:
-                throw new ArgumentOutOfRangeException(nameof(MaxDepth), MaxDepth, $"FluxorViewer: {message}");
-            case [var (option, message)]:
-                throw new ArgumentException($"FluxorViewer: {message}", option);
-            default:
-                throw new ArgumentException(
-                    "FluxorViewer options are invalid:" + string.Concat(problems.Select(p => $"{Environment.NewLine}- {p.Message}")));
+            case [var only]:
+                throw only.Exception;
+            case var problems:
+                throw new ArgumentException($"FluxorViewer: options are invalid. {string.Join(' ', problems.Select(p => p.Message))}");
         }
+    }
+
+    private IEnumerable<Problem> Problems()
+    {
+        if (!IsHttpUrl(ServerUrl))
+            yield return Problem.Invalid(nameof(ServerUrl), $"ServerUrl '{ServerUrl}' must be an absolute http or https URL.");
+        if (string.IsNullOrWhiteSpace(AppName))
+            yield return Problem.Invalid(nameof(AppName), "AppName must not be blank.");
+        if (BufferSize < 1)
+            yield return Problem.OutOfRange(nameof(BufferSize), BufferSize, $"BufferSize must be at least 1, but was {BufferSize}.");
+        if (MaxDepth is < 1 or > JsonLimits.MaxDepth)
+            yield return Problem.OutOfRange(nameof(MaxDepth), MaxDepth, $"MaxDepth must be between 1 and {JsonLimits.MaxDepth}, but was {MaxDepth}.");
+    }
+
+    private static bool IsHttpUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    /// <summary>One invalid option: its message, and what to throw when it's the only problem.</summary>
+    private sealed record Problem(string Message, ArgumentException Exception)
+    {
+        public static Problem Invalid(string option, string message) =>
+            new(message, new ArgumentException($"FluxorViewer: {message}", option));
+
+        public static Problem OutOfRange(string option, int value, string message) =>
+            new(message, new ArgumentOutOfRangeException(option, value, $"FluxorViewer: {message}"));
     }
 }
