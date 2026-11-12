@@ -138,7 +138,7 @@
     private static bool Same((ActionEntry? Action, string? Feature, bool ShowUnchanged) a, (ActionEntry? Action, string? Feature, bool ShowUnchanged) b) =>
         ReferenceEquals(a.Action, b.Action) && a.Feature == b.Feature && a.ShowUnchanged == b.ShowUnchanged;
 
-    private Task OnShowUnchanged(ChangeEventArgs e) => ShowUnchangedChanged.InvokeAsync(e.Value is true);
+    private Task OnShowUnchanged(ChangeEventArgs change) => ShowUnchangedChanged.InvokeAsync(change.Value is true);
 
     public async ValueTask DisposeAsync()
     {

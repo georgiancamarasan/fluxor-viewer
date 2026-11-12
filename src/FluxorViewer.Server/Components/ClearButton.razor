@@ -28,7 +28,7 @@ else
     private ElementReference cancel;
 
     // A connected Session with an empty History has nothing to clear; a disconnected one can still be removed.
-    private bool CanClear => Session is { } s && (s.Status == SessionStatus.Disconnected || s.History.Count > 0);
+    private bool CanClear => Session is { } session && (session.Status == SessionStatus.Disconnected || session.History.Count > 0);
 
     protected override void OnParametersSet()
     {
@@ -57,9 +57,9 @@ else
 
     private void Cancel() => prompting = false;
 
-    private void OnKeyDown(KeyboardEventArgs e)
+    private void OnKeyDown(KeyboardEventArgs key)
     {
-        if (e.Key == "Escape")
+        if (key.Key == "Escape")
             Cancel();
     }
 

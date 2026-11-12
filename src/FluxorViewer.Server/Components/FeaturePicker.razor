@@ -23,6 +23,6 @@
 
     [Parameter] public EventCallback<string> SelectedChanged { get; set; }
 
-    private Task OnChange(ChangeEventArgs e) =>
-        e.Value is string { Length: > 0 } name ? SelectedChanged.InvokeAsync(name) : Task.CompletedTask;
+    private Task OnChange(ChangeEventArgs change) =>
+        change.Value is string { Length: > 0 } name ? SelectedChanged.InvokeAsync(name) : Task.CompletedTask;
 }

@@ -34,6 +34,6 @@
     private static string Label(ReceivedSession session) =>
         $"{(session.Status == SessionStatus.Connected ? "●" : "○")} {session.AppName} · {session.Runtime} · {session.ShortId}";
 
-    private Task OnChange(ChangeEventArgs e) =>
-        Guid.TryParse(e.Value as string, out var sessionId) ? SelectedChanged.InvokeAsync(sessionId) : Task.CompletedTask;
+    private Task OnChange(ChangeEventArgs change) =>
+        Guid.TryParse(change.Value as string, out var sessionId) ? SelectedChanged.InvokeAsync(sessionId) : Task.CompletedTask;
 }
