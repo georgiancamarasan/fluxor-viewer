@@ -2,10 +2,10 @@
 {
     <div class="flex min-h-0 flex-col" data-test="state">
         <p class="state-header" data-test="state-header">
-            <span class="font-mono" data-test="state-type" title="@state.StateType">@ActionTypeName.Short(state.StateType)</span> · @switch (Entry)
+            <TypeName FullName="@state.StateType" data-test="state-type" /> · @switch (Entry)
             {
                 case ActionEntry action:
-                    <text>after #@action.Sequence </text><span class="font-mono" title="@action.ActionType">@ActionTypeName.Short(action.ActionType)</span>
+                    <text>after #@action.Sequence </text><TypeName FullName="@action.ActionType" />
                     break;
                 case ResyncEntry:
                     <text>after resync</text>

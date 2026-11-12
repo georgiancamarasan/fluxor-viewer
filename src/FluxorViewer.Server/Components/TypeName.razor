@@ -1,0 +1,10 @@
+@* A .NET type by its short name, with the full name on hover. *@
+<span class="font-mono" title="@FullName" @attributes="Attributes">@ActionTypeName.Short(FullName)</span>
+
+@code {
+    /// <summary>The type's full name, as the middleware sends it.</summary>
+    [Parameter, EditorRequired] public string FullName { get; set; } = "";
+
+    /// <summary>Any other attributes for the span, such as <c>data-test</c>.</summary>
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributes { get; set; }
+}
