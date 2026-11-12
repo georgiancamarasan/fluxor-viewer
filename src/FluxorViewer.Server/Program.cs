@@ -5,7 +5,12 @@ using FluxorViewer.Server.Sessions;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton(HistoryLimit.From(builder.Configuration));
+if (!HistoryLimit.TryFrom(builder.Configuration, out var historyLimit, out var historyError))
+{
+    Console.Error.WriteLine(historyError);
+    return 1;
+}
+builder.Services.AddSingleton(historyLimit);
 builder.Services.AddSingleton<SessionRegistry>();
 builder.Services.AddSingleton<ISessionRegistry>(sp => sp.GetRequiredService<SessionRegistry>());
 builder.Services.AddSingleton<IngestRejections>();
@@ -30,3 +35,5 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();
+
+return 0;

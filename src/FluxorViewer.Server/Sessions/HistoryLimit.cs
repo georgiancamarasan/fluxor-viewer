@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 namespace FluxorViewer.Server.Sessions;
@@ -8,14 +9,24 @@ public sealed record HistoryLimit(int Value)
     /// <summary>The configuration key, set on the command line as <c>--history N</c>.</summary>
     public const string Key = "history";
 
+    /// <summary>The limit when <see cref="Key"/> isn't set: 1,000 entries per Session.</summary>
     public static readonly HistoryLimit Default = new(1000);
 
-    /// <summary>The limit set by <see cref="Key"/>, or <see cref="Default"/> when it isn't set.</summary>
-    /// <exception cref="InvalidOperationException">The value isn't a whole number of at least 1.</exception>
-    public static HistoryLimit From(IConfiguration configuration) => configuration[Key] switch
+    /// <summary>Reads the limit set by <see cref="Key"/>, or <see cref="Default"/> when it isn't set.</summary>
+    /// <param name="error">Why the value can't be used, as one line for the developer; null when it can.</param>
+    public static bool TryFrom(
+        IConfiguration configuration, [NotNullWhen(true)] out HistoryLimit? limit, [NotNullWhen(false)] out string? error)
     {
-        null => Default,
-        var value when int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var limit) && limit >= 1 => new HistoryLimit(limit),
-        var value => throw new InvalidOperationException($"--history must be a whole number of at least 1, not \"{value}\"."),
-    };
+        var value = configuration[Key];
+        (limit, error) = value switch
+        {
+            null => (Default, null),
+            _ when int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var n) && n >= 1 => (new HistoryLimit(n), null),
+            // Digits only, so a whole number; it failed to parse because it's too large.
+            _ when value.Length > 0 && value.All(char.IsAsciiDigit) && value.TrimStart('0').Length > 0 =>
+                ((HistoryLimit?)null, $"--history can be at most {int.MaxValue}, not \"{value}\"."),
+            _ => (null, $"--history must be a whole number of at least 1, not \"{value}\"."),
+        };
+        return limit is not null;
+    }
 }

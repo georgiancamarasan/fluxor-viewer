@@ -24,10 +24,14 @@ public class HistoryLimitPageTests : BunitContext
 
     private void Snapshot() => registry.SnapshotReceived("c1", new Snapshot(
         ProtocolVersion.Current, SessionId, "MyApp", Runtime.Server, DateTimeOffset.UtcNow, 0, 0,
-        [new FeatureState("Counter", "App.CounterState", """{"Count":0}""")]));
+        [new FeatureState("Counter", "App.CounterState", """{"Count":0}"""), new FeatureState("Weather", "App.WeatherState", """{"Day":0}""")]));
 
     private void Dispatch(params long[] sequences) => registry.ActionsReceived("c1", [.. sequences.Select(s => new ActionRecorded(
         SessionId, s, DateTimeOffset.UtcNow, "App.Increment", "{}", [new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{s}}}""")]))]);
+
+    // Actions that change only Weather, so "changed only" hides them while Counter (the first Feature) is selected.
+    private void DispatchWeather(params long[] sequences) => registry.ActionsReceived("c1", [.. sequences.Select(s => new ActionRecorded(
+        SessionId, s, DateTimeOffset.UtcNow, "App.NextDay", "{}", [new FeatureState("Weather", "App.WeatherState", $$"""{"Day":{{s}}}""")]))]);
 
     private static string? Note(IRenderedComponent<Home> page) =>
         page.FindAll("[data-test=discarded]").SingleOrDefault()?.TextContent.Trim();
@@ -102,5 +106,38 @@ public class HistoryLimitPageTests : BunitContext
 
         Dispatch(8);
         page.WaitForAssertion(() => Assert.NotNull(Note(page)));
+    }
+
+    [Fact]
+    public void Changed_only_never_hides_the_note()
+    {
+        Snapshot();
+        DispatchWeather(1, 2, 3, 4);
+        var page = Render<Home>();
+
+        page.Find("[data-test=changed-only]").Change(true);
+
+        Assert.Empty(page.FindAll("[data-test=action-list] [role=option]"));
+        Assert.NotNull(page.Find("[data-test=no-match]"));
+        Assert.NotNull(Note(page));
+    }
+
+    [Fact]
+    public void While_paused_discarding_older_rows_keeps_the_selection_and_the_new_count_ignores_the_note()
+    {
+        Snapshot();
+        Dispatch(1, 2, 3);
+        var page = Render<Home>();
+        page.FindAll("[data-test=action-row]")[1].Click(); // #2: pauses Follow mode
+
+        Dispatch(4);
+
+        page.WaitForAssertion(() =>
+        {
+            Assert.Equal([2, 3, 4], Sequences(page));
+            Assert.NotNull(Note(page));
+            Assert.Equal("2", page.Find("[aria-selected=true] [data-test=sequence]").TextContent.Trim());
+            Assert.Equal("▼ 1 new", page.Find("[data-test=new-actions]").TextContent.Trim());
+        });
     }
 }

@@ -38,7 +38,7 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
             long firstUnreceived;
             if (!sessions.TryGetValue(snapshot.SessionId, out var session))
             {
-                sessions[snapshot.SessionId] = session = new Entry(snapshot, ++seen);
+                sessions[snapshot.SessionId] = session = new Entry(snapshot, ++seen, limit);
                 changes.Add(new SessionAdded(snapshot.SessionId));
                 // Actions before a new Session's first Snapshot predate this Viewer; only the dropped ones were lost.
                 lost = snapshot.DroppedCount;
@@ -67,14 +67,13 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
             if (lost is null or > 0)
             {
                 long? firstLost = lost is { } n ? Math.Max(firstUnreceived, snapshot.LastSequence - n + 1) : null;
-                session.History.Add(new ResyncEntry(
+                session.Append(new ResyncEntry(
                     session.NextId(),
                     snapshot.LastSequence,
                     time.GetLocalNow(),
                     lost,
                     firstLost <= snapshot.LastSequence ? firstLost : null,
                     FeatureMap.From(snapshot.Features)));
-                session.Discard(limit.Value);
                 changes.Add(new EntriesAppended(snapshot.SessionId, 1));
             }
 
@@ -96,7 +95,6 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
             if (Current(connectionId) is not { } session)
                 return;
             var appended = actions.Count(session.Record);
-            session.Discard(limit.Value);
             if (appended > 0)
                 change = new EntriesAppended(session.First.SessionId, appended);
         }
@@ -175,11 +173,13 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
             ? session
             : null;
 
-    private sealed class Entry(Snapshot first, long seen)
+    private sealed class Entry(Snapshot first, long seen, HistoryLimit limit)
     {
         public long Seen { get; } = seen;
         public Snapshot First { get; } = first;
-        public List<HistoryEntry> History { get; } = [];
+        private readonly List<HistoryEntry> history = [];
+
+        public IReadOnlyList<HistoryEntry> History => history;
         public ImmutableDictionary<string, FeatureState> Current { get; set; } = FeatureMap.Empty;
         public long LastSequence { get; set; }
         public string? ConnectionId { get; set; }
@@ -203,7 +203,7 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
                 return false;
             var before = Current;
             var after = before.SetItems(action.ChangedFeatures.Select(f => KeyValuePair.Create(f.Name, f)));
-            History.Add(new ActionEntry(
+            Append(new ActionEntry(
                 NextId(),
                 action.Sequence,
                 action.Timestamp,
@@ -217,19 +217,20 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
             return true;
         }
 
-        /// <summary>Discards the oldest entries beyond <paramref name="limit"/>.</summary>
-        public void Discard(int limit)
+        /// <summary>Appends an entry to the History, discarding the oldest if that takes it past the limit.</summary>
+        public void Append(HistoryEntry entry)
         {
-            if (History.Count <= limit)
+            history.Add(entry);
+            if (history.Count <= limit.Value)
                 return;
-            History.RemoveRange(0, History.Count - limit);
+            history.RemoveAt(0);
             HasDiscarded = true;
         }
 
         /// <summary>Empties the History; the current Feature states and last Sequence stay as the new starting point.</summary>
         public void ClearHistory()
         {
-            History.Clear();
+            history.Clear();
             HasDiscarded = false;
         }
 
