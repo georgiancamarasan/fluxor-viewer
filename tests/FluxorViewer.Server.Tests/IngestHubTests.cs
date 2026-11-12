@@ -133,6 +133,11 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         { "empty SessionId", NewSnapshot(Guid.Empty) },
         { "no Features list", NewSnapshot() with { Features = null! } },
         { "Feature 'Counter' more than once", NewSnapshot(features: [new("Counter", "A", "{}"), new("Counter", "A", "{}")]) },
+        { "no AppName", NewSnapshot() with { AppName = null! } },
+        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(features: [null!]) },
+        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(features: [new(null!, "A", "{}")]) },
+        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(features: [new("Counter", null!, "{}")]) },
+        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(features: [new("Counter", "A", null!)]) },
     };
 
     [Theory]
@@ -145,6 +150,31 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
 
         Assert.Contains(problem, ex.Message);
         Assert.Equal(HubConnectionState.Connected, connection.State); // Rejections keep the connection open.
+        Assert.Null(viewer.Registry.Find(snapshot.SessionId));
+    }
+
+    public static TheoryData<string, ActionRecorded> InvalidActions => new()
+    {
+        { "missing its ActionType, ActionJson or ChangedFeatures", NewAction(Guid.Empty, 2) with { ActionType = null! } },
+        { "missing its ActionType, ActionJson or ChangedFeatures", NewAction(Guid.Empty, 2) with { ActionJson = null! } },
+        { "missing its ActionType, ActionJson or ChangedFeatures", NewAction(Guid.Empty, 2) with { ChangedFeatures = null! } },
+        { "a Changed Feature that is null or missing its Name, StateType or StateJson", NewAction(Guid.Empty, 2) with { ChangedFeatures = [null!] } },
+        { "a Changed Feature that is null or missing its Name, StateType or StateJson", NewAction(Guid.Empty, 2) with { ChangedFeatures = [new(null!, "A", "{}")] } },
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidActions))]
+    public async Task An_Actions_batch_with_an_invalid_Action_is_refused_whole(string problem, ActionRecorded invalid)
+    {
+        await using var connection = await viewer.ConnectAsync();
+        var sessionId = Guid.NewGuid();
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+
+        var ex = await Assert.ThrowsAsync<HubException>(() =>
+            connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 1), invalid with { SessionId = sessionId } }, Ct));
+
+        Assert.Contains(problem, ex.Message);
+        Assert.Empty(viewer.Registry.Find(sessionId)!.Actions);
     }
 
     [Fact]

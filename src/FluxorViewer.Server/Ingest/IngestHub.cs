@@ -30,8 +30,12 @@ public sealed class IngestHub(ISessionRegistry registry, IngestRejections reject
 
         if (snapshot.SessionId == Guid.Empty)
             throw Reject("the Snapshot has an empty SessionId.");
+        if (snapshot.AppName is null)
+            throw Reject("the Snapshot has no AppName.");
         if (snapshot.Features is null)
             throw Reject("the Snapshot has no Features list.");
+        if (!snapshot.Features.All(IsComplete))
+            throw Reject("the Snapshot has a Feature that is null or missing its Name, StateType or StateJson.");
         if (snapshot.Features.GroupBy(f => f?.Name).FirstOrDefault(g => g.Count() > 1) is { } duplicate)
             throw Reject($"the Snapshot lists Feature '{duplicate.Key}' more than once.");
         if (BoundSession is { } bound && bound != snapshot.SessionId)
@@ -49,6 +53,10 @@ public sealed class IngestHub(ISessionRegistry registry, IngestRejections reject
             throw Reject("the Actions batch is missing or contains null entries.");
         if (actions.FirstOrDefault(a => a.SessionId != bound) is { } stray)
             throw Reject($"this connection reports Session {bound}, but an Action is for Session {stray.SessionId}.");
+        if (actions.FirstOrDefault(a => a.ActionType is null || a.ActionJson is null || a.ChangedFeatures is null) is { } incomplete)
+            throw Reject($"Action #{incomplete.Sequence} is missing its ActionType, ActionJson or ChangedFeatures.");
+        if (actions.FirstOrDefault(a => !a.ChangedFeatures.All(IsComplete)) is { } broken)
+            throw Reject($"Action #{broken.Sequence} has a Changed Feature that is null or missing its Name, StateType or StateJson.");
 
         registry.ActionsReceived(Context.ConnectionId, actions);
     }
@@ -58,6 +66,10 @@ public sealed class IngestHub(ISessionRegistry registry, IngestRejections reject
         registry.ConnectionClosed(Context.ConnectionId);
         return base.OnDisconnectedAsync(exception);
     }
+
+    // Everything the registry and UI read from a Feature state, so nothing null gets past the hub.
+    private static bool IsComplete(FeatureState? state) =>
+        state is { Name: not null, StateType: not null, StateJson: not null };
 
     private Guid? BoundSession
     {
