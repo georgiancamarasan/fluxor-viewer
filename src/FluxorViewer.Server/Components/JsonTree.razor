@@ -13,7 +13,7 @@ else
             var root = document.RootElement;
             if (root.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
             {
-                @Children(root, "$", 0)
+                @Children(root, Place.Root)
             }
             else
             {
@@ -33,7 +33,7 @@ else
     private string? parsed;
     private JsonDocument? document;
 
-    // Why the JSON couldn't be read (too deep, or malformed from a client other than the middleware). Shown instead of
+    // Why the JSON couldn't be read (too deep, or malformed by something other than the middleware). Shown instead of
     // throwing: an exception while rendering would end the developer's circuit.
     private string? unreadable;
 
@@ -61,18 +61,34 @@ else
     /// </summary>
     [Parameter] public Dictionary<string, bool> Toggles { get; set; } = [];
 
+    /// <summary>Where a node sits: its JSON path (<c>$.a[0]</c>) and how deep it is (the root is 0).</summary>
+    private readonly record struct Place(string Path, int Depth)
+    {
+        public static readonly Place Root = new("$", 0);
+
+        /// <summary>A child of this node, one level deeper, at <paramref name="segment"/> (<c>.name</c> or <c>[3]</c>).</summary>
+        public Place Child(string segment) => new(Path + segment, Depth + 1);
+    }
+
+    /// <summary>Array items from <paramref name="Start"/> up to, not including, <paramref name="End"/>.</summary>
+    private readonly record struct ItemRange(int Start, int End)
+    {
+        /// <summary>The range's label and path segment, e.g. <c>[100…199]</c>.</summary>
+        public string Label => $"[{Start}…{End - 1}]";
+    }
+
     /// <summary>The root and its direct children are open unless toggled.</summary>
-    private bool IsExpanded(string path, int depth) => Toggles.TryGetValue(path, out var expanded) ? expanded : depth <= 1;
+    private bool IsExpanded(Place place) => Toggles.TryGetValue(place.Path, out var expanded) ? expanded : place.Depth <= 1;
 
     private void Flip(string path, bool expanded) => Toggles[path] = !expanded;
 
-    private RenderFragment Children(JsonElement element, string path, int depth) => __builder =>
+    private RenderFragment Children(JsonElement element, Place place) => __builder =>
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
             foreach (var property in element.EnumerateObject())
             {
-                @Node(property.Name, property.Value, path + Member(property.Name), depth + 1)
+                @Node(property.Name, property.Value, place.Child(Member(property.Name)))
             }
         }
         else if (element.ValueKind == JsonValueKind.Array)
@@ -80,13 +96,13 @@ else
             var length = element.GetArrayLength();
             if (length <= RangeSize)
             {
-                @Items(element, path, depth, 0, length)
+                @Items(element, place, new ItemRange(0, length))
             }
             else
             {
                 for (var start = 0; start < length; start += RangeSize)
                 {
-                    @Range(element, path, depth, start, Math.Min(start + RangeSize, length))
+                    @Range(element, place, new ItemRange(start, Math.Min(start + RangeSize, length)))
                 }
             }
         }
@@ -95,28 +111,27 @@ else
     /// <summary>Longer arrays are split into ranges of this many items, so opening one doesn't render thousands of rows.</summary>
     private const int RangeSize = 100;
 
-    private RenderFragment Items(JsonElement array, string path, int depth, int start, int end) => __builder =>
+    private RenderFragment Items(JsonElement array, Place arrayPlace, ItemRange range) => __builder =>
     {
-        var index = start;
-        foreach (var item in array.EnumerateArray().Skip(start).Take(end - start))
+        var index = range.Start;
+        foreach (var item in array.EnumerateArray().Skip(range.Start).Take(range.End - range.Start))
         {
-            @Node(index.ToString(), item, $"{path}[{index}]", depth + 1)
+            @Node(index.ToString(), item, arrayPlace.Child($"[{index}]"))
             index++;
         }
     };
 
     /// <summary>A range of array items. Ranges start collapsed and aren't a level: their items keep the array's depth + 1.</summary>
-    private RenderFragment Range(JsonElement array, string arrayPath, int depth, int start, int end) => __builder =>
+    private RenderFragment Range(JsonElement array, Place arrayPlace, ItemRange range) => __builder =>
     {
-        var label = $"[{start}…{end - 1}]";
-        var path = arrayPath + label;
+        var path = arrayPlace.Path + range.Label;
         var expanded = Toggles.GetValueOrDefault(path);
         <div class="json-node" data-test="node" data-path="@path">
             @Toggle(path, expanded)
-            <span class="json-key" data-test="key">@label</span>
+            <span class="json-key" data-test="key">@range.Label</span>
             @if (expanded)
             {
-                @Items(array, arrayPath, depth, start, end)
+                @Items(array, arrayPlace, range)
             }
         </div>
     };
@@ -150,21 +165,21 @@ else
         _ => "null",
     };
 
+    /// <summary>What a collapsed object or array shows: <c>{…} 3 keys</c> or <c>[…] 1 item</c>.</summary>
     private static string Summary(JsonElement element) => element.ValueKind == JsonValueKind.Object
-        ? Count("{…}", element.EnumerateObject().Count(), "key", "keys")
-        : Count("[…]", element.GetArrayLength(), "item", "items");
+        ? "{…} " + Plural(element.EnumerateObject().Count(), "key")
+        : "[…] " + Plural(element.GetArrayLength(), "item");
 
-    private static string Count(string brackets, int count, string one, string many) =>
-        $"{brackets} {count} {(count == 1 ? one : many)}";
+    private static string Plural(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 
-    private RenderFragment Node(string key, JsonElement value, string path, int depth) => __builder =>
+    private RenderFragment Node(string key, JsonElement value, Place place) => __builder =>
     {
         var container = value.ValueKind is JsonValueKind.Object or JsonValueKind.Array;
-        var expanded = container && IsExpanded(path, depth);
-        <div class="json-node" data-test="node" data-path="@path">
+        var expanded = container && IsExpanded(place);
+        <div class="json-node" data-test="node" data-path="@place.Path">
             @if (container)
             {
-                @Toggle(path, expanded)
+                @Toggle(place.Path, expanded)
             }
             <span class="json-key" data-test="key">@key</span>:
             @if (!container)
@@ -177,10 +192,11 @@ else
             }
             @if (expanded)
             {
-                @Children(value, path, depth)
+                @Children(value, place)
             }
         </div>
     };
 
+    /// <summary>Releases the parsed JSON.</summary>
     public void Dispose() => document?.Dispose();
 }
