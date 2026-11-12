@@ -106,17 +106,16 @@ public class ActionRecordingTests
     }
 
     [Fact]
-    public async Task Timestamps_are_UTC_at_dispatch()
+    public async Task Timestamps_are_the_UTC_time_of_dispatch()
     {
         await using var harness = new Harness();
         var (connection, _) = await harness.StartConnected();
-        var before = DateTimeOffset.UtcNow;
+        harness.Time.SetUtcNow(new DateTimeOffset(2026, 11, 12, 10, 2, 3, 45, TimeSpan.Zero));
 
         harness.Dispatcher.Dispatch(new IncrementAction());
-        var after = DateTimeOffset.UtcNow;
 
         var action = Assert.Single(await Harness.ActionsSent(connection, 1));
-        Assert.InRange(action.Timestamp, before, after);
+        Assert.Equal(new DateTimeOffset(2026, 11, 12, 10, 2, 3, 45, TimeSpan.Zero), action.Timestamp);
         Assert.Equal(TimeSpan.Zero, action.Timestamp.Offset);
     }
 

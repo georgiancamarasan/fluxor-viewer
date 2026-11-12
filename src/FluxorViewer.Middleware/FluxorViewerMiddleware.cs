@@ -15,11 +15,11 @@ internal sealed class FluxorViewerMiddleware(
 {
     internal FluxorViewerOptions Options { get; } = options;
 
-    internal SessionReporter Reporter { get; } = new(
+    internal SessionReporter Reporter { get; } = new(new ReporterContext(
         options,
         connectionFactory,
         (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<FluxorViewerMiddleware>(),
-        time ?? TimeProvider.System);
+        time ?? TimeProvider.System));
 
     public override Task InitializeAsync(IDispatcher dispatcher, IStore store)
     {

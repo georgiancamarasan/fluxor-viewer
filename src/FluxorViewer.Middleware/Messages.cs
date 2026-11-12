@@ -6,17 +6,18 @@ namespace FluxorViewer.Middleware;
 /// <summary>Turns tracked Feature states and pending Actions into protocol messages.</summary>
 internal static class Messages
 {
-    public static Snapshot Snapshot(
-        SessionInfo session, long lastSequence, long droppedCount, IEnumerable<TrackedState> features, ViewerJson json) => new(
+    /// <summary>The Snapshot of <paramref name="baseCopy"/> for <paramref name="session"/>.</summary>
+    public static Snapshot Snapshot(SessionInfo session, BaseCopy baseCopy, ViewerJson json) => new(
         ProtocolVersion.Current,
         session.SessionId,
         session.AppName,
         session.Runtime,
         session.StartedAt,
-        lastSequence,
-        droppedCount,
-        features.Select(f => FeatureState(f, json)).ToList());
+        baseCopy.LastSequence,
+        baseCopy.DroppedCount,
+        baseCopy.Features.Select(f => FeatureState(f, json)).ToList());
 
+    /// <summary>The message for one Action of <paramref name="session"/>, with its Changed Features.</summary>
     public static ActionRecorded ActionRecorded(SessionInfo session, PendingAction pending, ViewerJson json) => new(
         session.SessionId,
         pending.Sequence,
