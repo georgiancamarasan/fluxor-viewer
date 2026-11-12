@@ -1,0 +1,55 @@
+@if (Feature is not null && (Action?.After ?? Current).GetValueOrDefault(Feature) is { } state)
+{
+    <div class="flex min-h-0 flex-col" data-test="state">
+        <p class="state-header" data-test="state-header">
+            <span class="font-mono" data-test="state-type" title="@state.StateType">@ActionTypeName.Short(state.StateType)</span> · @if (Action is null)
+            {<text>current</text>}
+            else
+            {<text>after #@Action.Sequence </text><span class="font-mono" title="@Action.ActionType">@ActionTypeName.Short(Action.ActionType)</span>}
+        </p>
+        @if (SerialisationError(state.StateJson) is { } error)
+        {
+            <p class="state-error" data-test="state-error">Couldn't serialise @Feature: @error</p>
+        }
+        else
+        {
+            <JsonTree Json="@state.StateJson" Toggles="Toggles" />
+        }
+    </div>
+}
+else if (Feature is not null)
+{
+    <p class="muted" data-test="state-missing">@Feature didn't exist at this point</p>
+}
+
+@code {
+    /// <summary>The selected Feature's name; the pane shows nothing without one.</summary>
+    [Parameter] public string? Feature { get; set; }
+
+    /// <summary>The selected Action, or null to show <see cref="Current"/>.</summary>
+    [Parameter] public ActionEntry? Action { get; set; }
+
+    /// <summary>The selected Feature's expand/collapse choices, kept by the caller across Actions and Sessions.</summary>
+    [Parameter, EditorRequired] public Dictionary<string, bool> Toggles { get; set; } = [];
+
+    /// <summary>The selected Session's current Feature states.</summary>
+    [Parameter, EditorRequired] public ImmutableDictionary<string, FeatureState> Current { get; set; } = ImmutableDictionary<string, FeatureState>.Empty;
+
+    /// <summary>
+    /// The message when the middleware couldn't serialise the state and sent exactly <c>{"$error": "message"}</c> in its
+    /// place; null for anything else, including a state that merely has a <c>$error</c> property. Stops reading at the
+    /// first token that doesn't fit, so large states cost almost nothing.
+    /// </summary>
+    private static string? SerialisationError(string json)
+    {
+        var reader = new System.Text.Json.Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes(json));
+        if (!reader.Read() || reader.TokenType != System.Text.Json.JsonTokenType.StartObject)
+            return null;
+        if (!reader.Read() || reader.TokenType != System.Text.Json.JsonTokenType.PropertyName || !reader.ValueTextEquals("$error"))
+            return null;
+        if (!reader.Read() || reader.TokenType != System.Text.Json.JsonTokenType.String)
+            return null;
+        var message = reader.GetString();
+        return reader.Read() && reader.TokenType == System.Text.Json.JsonTokenType.EndObject ? message : null;
+    }
+}

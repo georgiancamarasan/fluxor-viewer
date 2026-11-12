@@ -1,0 +1,163 @@
+@using System.Text.Json
+@implements IDisposable
+
+<div class="json-tree" data-test="json-tree">
+    @if (document is not null)
+    {
+        var root = document.RootElement;
+        if (root.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+        {
+            @Children(root, "$", 0)
+        }
+        else
+        {
+            @Value(root)
+        }
+    }
+</div>
+
+@code {
+    /// <summary>The JSON to show, left as received.</summary>
+    [Parameter, EditorRequired] public string Json { get; set; } = "";
+
+    private string? parsed;
+    private JsonDocument? document;
+
+    protected override void OnParametersSet()
+    {
+        if (Json == parsed)
+            return;
+        document?.Dispose();
+        document = JsonDocument.Parse(Json);
+        parsed = Json;
+    }
+
+    /// <summary>
+    /// The developer's explicit expand/collapse choices by path (true = open); anything else follows the default. Owned by
+    /// the caller so the choices outlive this JSON. Paths absent from this JSON are left alone.
+    /// </summary>
+    [Parameter] public Dictionary<string, bool> Toggles { get; set; } = [];
+
+    /// <summary>The root and its direct children are open unless toggled.</summary>
+    private bool IsExpanded(string path, int depth) => Toggles.TryGetValue(path, out var expanded) ? expanded : depth <= 1;
+
+    private void Flip(string path, bool expanded) => Toggles[path] = !expanded;
+
+    private RenderFragment Children(JsonElement element, string path, int depth) => __builder =>
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                @Node(property.Name, property.Value, path + Member(property.Name), depth + 1)
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            var length = element.GetArrayLength();
+            if (length <= RangeSize)
+            {
+                @Items(element, path, depth, 0, length)
+            }
+            else
+            {
+                for (var start = 0; start < length; start += RangeSize)
+                {
+                    @Range(element, path, depth, start, Math.Min(start + RangeSize, length))
+                }
+            }
+        }
+    };
+
+    /// <summary>Longer arrays are split into ranges of this many items, so opening one doesn't render thousands of rows.</summary>
+    private const int RangeSize = 100;
+
+    private RenderFragment Items(JsonElement array, string path, int depth, int start, int end) => __builder =>
+    {
+        var index = start;
+        foreach (var item in array.EnumerateArray().Skip(start).Take(end - start))
+        {
+            @Node(index.ToString(), item, $"{path}[{index}]", depth + 1)
+            index++;
+        }
+    };
+
+    /// <summary>A range of array items. Ranges start collapsed and aren't a level: their items keep the array's depth + 1.</summary>
+    private RenderFragment Range(JsonElement array, string arrayPath, int depth, int start, int end) => __builder =>
+    {
+        var label = $"[{start}…{end - 1}]";
+        var path = arrayPath + label;
+        var expanded = Toggles.GetValueOrDefault(path);
+        <div class="json-node" data-test="node" data-path="@path">
+            @Toggle(path, expanded)
+            <span class="json-key" data-test="key">@label</span>
+            @if (expanded)
+            {
+                @Items(array, arrayPath, depth, start, end)
+            }
+        </div>
+    };
+
+    private RenderFragment Toggle(string path, bool expanded) => __builder =>
+    {
+        <button type="button" class="json-toggle" data-test="toggle" aria-expanded="@(expanded ? "true" : "false")"
+                aria-label="@(expanded ? "Collapse" : "Expand")" @onclick="() => Flip(path, expanded)">@(expanded ? "▾" : "▸")</button>
+    };
+
+    /// <summary>A scalar, shown exactly as received.</summary>
+    private static RenderFragment Value(JsonElement value) => __builder =>
+    {
+        var kind = Kind(value.ValueKind);
+        <span class="json-@kind" data-test="value" data-kind="@kind">@value.GetRawText()</span>
+    };
+
+    /// <summary>A property's path segment: <c>.name</c> for identifiers, otherwise <c>["name"]</c> JSON-escaped.</summary>
+    private static string Member(string name) =>
+        name.Length > 0 && (char.IsLetter(name[0]) || name[0] is '_' or '$') && name.All(c => char.IsLetterOrDigit(c) || c is '_' or '$')
+            ? "." + name
+            : $"[{JsonSerializer.Serialize(name, Readable)}]";
+
+    private static readonly JsonSerializerOptions Readable = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    private static string Kind(JsonValueKind kind) => kind switch
+    {
+        JsonValueKind.String => "string",
+        JsonValueKind.Number => "number",
+        JsonValueKind.True or JsonValueKind.False => "boolean",
+        _ => "null",
+    };
+
+    private static string Summary(JsonElement element) => element.ValueKind == JsonValueKind.Object
+        ? Count("{…}", element.EnumerateObject().Count(), "key", "keys")
+        : Count("[…]", element.GetArrayLength(), "item", "items");
+
+    private static string Count(string brackets, int count, string one, string many) =>
+        $"{brackets} {count} {(count == 1 ? one : many)}";
+
+    private RenderFragment Node(string key, JsonElement value, string path, int depth) => __builder =>
+    {
+        var container = value.ValueKind is JsonValueKind.Object or JsonValueKind.Array;
+        var expanded = container && IsExpanded(path, depth);
+        <div class="json-node" data-test="node" data-path="@path">
+            @if (container)
+            {
+                @Toggle(path, expanded)
+            }
+            <span class="json-key" data-test="key">@key</span>:
+            @if (!container)
+            {
+                @Value(value)
+            }
+            @if (container && !expanded)
+            {
+                <span class="json-summary" data-test="summary">@Summary(value)</span>
+            }
+            @if (expanded)
+            {
+                @Children(value, path, depth)
+            }
+        </div>
+    };
+
+    public void Dispose() => document?.Dispose();
+}

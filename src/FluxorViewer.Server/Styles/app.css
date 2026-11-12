@@ -27,6 +27,51 @@
         @apply bg-sky-100 hover:bg-sky-100 dark:bg-sky-900/50 dark:hover:bg-sky-900/50;
     }
 
+    .state-header {
+        @apply mb-3 text-sm text-zinc-500 dark:text-zinc-400;
+    }
+
+    .state-error {
+        @apply rounded-md border border-red-300 bg-red-50 px-3 py-2 font-mono text-sm text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300;
+    }
+
+    .json-tree {
+        @apply font-mono text-sm leading-6;
+    }
+
+    /* Children sit inside their parent's node, so each level indents by one step. The toggle hangs left of the key. */
+    .json-node {
+        @apply relative pl-5 break-words;
+    }
+
+    .json-toggle {
+        @apply absolute left-0 w-5 cursor-pointer text-center text-zinc-500 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-sky-500 dark:hover:text-zinc-100;
+    }
+
+    .json-key {
+        @apply text-zinc-700 dark:text-zinc-300;
+    }
+
+    .json-summary {
+        @apply text-zinc-400 dark:text-zinc-500;
+    }
+
+    .json-string {
+        @apply whitespace-pre-wrap text-emerald-700 dark:text-emerald-400;
+    }
+
+    .json-number {
+        @apply text-sky-700 dark:text-sky-400;
+    }
+
+    .json-boolean {
+        @apply text-violet-700 dark:text-violet-400;
+    }
+
+    .json-null {
+        @apply text-zinc-400 italic dark:text-zinc-500;
+    }
+
     .muted {
         @apply text-sm text-zinc-500 dark:text-zinc-400;
     }

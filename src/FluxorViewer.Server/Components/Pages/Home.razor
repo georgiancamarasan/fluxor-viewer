@@ -30,7 +30,15 @@
                 }
             </section>
             <section class="pane flex-1">
-                <Placeholder Selected="selection.Selected is not null">State</Placeholder>
+                @if (selection.Selected is null)
+                {
+                    <Placeholder Selected="false" />
+                }
+                else
+                {
+                    <StatePane Feature="@features.Selected" Action="actions.Selected" Current="SelectedSession?.Current ?? []"
+                               Toggles="TogglesFor(features.Selected)" />
+                }
             </section>
         </main>
     }
@@ -41,6 +49,9 @@
     private readonly FeatureSelection features = new();
     private readonly ActionList actions = new();
     private IReadOnlyList<ReceivedSession> sessions = [];
+
+    // The State tab's expand/collapse choices, per Feature name for this Viewer tab.
+    private readonly Dictionary<string, Dictionary<string, bool>> toggles = [];
 
     protected override void OnInitialized()
     {
@@ -81,10 +92,15 @@
         UpdateSelectedSession();
     }
 
+    private Dictionary<string, bool> TogglesFor(string? feature) =>
+        feature is null ? [] : toggles.TryGetValue(feature, out var choices) ? choices : toggles[feature] = [];
+
+    private ReceivedSession? SelectedSession => sessions.FirstOrDefault(s => s.SessionId == selection.Selected);
+
     /// <summary>Re-reads what depends on the selected Session: its Features, then its Actions against the Feature.</summary>
     private void UpdateSelectedSession()
     {
-        var session = sessions.FirstOrDefault(s => s.SessionId == selection.Selected);
+        var session = SelectedSession;
         features.Update(session?.Current.Keys ?? []);
         actions.Update(session, features.Selected);
     }

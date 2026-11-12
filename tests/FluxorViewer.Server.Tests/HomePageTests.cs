@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FluxorViewer.Server.Tests;
 
-// UI-1, UI-2 and UI-3: the layout shell, Session and Feature pickers, and Action list, against a real registry.
+// UI-1 to UI-4: the layout shell, Session and Feature pickers, Action list and State tab, against a real registry.
 public class HomePageTests : BunitContext
 {
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance);
@@ -347,5 +347,107 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
         page.WaitForAssertion(() => Assert.Equal(["Increment"], Rows(page)));
         Assert.Empty(page.FindAll("[data-test=action-row][aria-selected=true]"));
+    }
+
+    private static string Header(IRenderedComponent<Home> page) => page.Find("[data-test=state-header]").TextContent.Trim();
+
+    private static string[] Values(IRenderedComponent<Home> page) =>
+        [.. page.FindAll("[data-test=state] [data-test=value]").Select(v => v.TextContent)];
+
+    [Fact]
+    public void The_State_tab_shows_the_selected_Features_state_after_the_selected_Action()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        var page = Render<Home>();
+
+        page.FindAll("[data-test=action-row]")[0].Click();
+
+        Assert.Equal("CounterState · after #1 Increment", Header(page));
+        Assert.Equal("App.CounterState", page.Find("[data-test=state-type]").GetAttribute("title"));
+        Assert.Equal(["1"], Values(page));
+    }
+
+    [Fact]
+    public void With_no_Action_selected_it_shows_the_current_state_and_follows_it_live()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        var page = Render<Home>();
+
+        Assert.Equal("CounterState · current", Header(page));
+        Assert.Equal(["1"], Values(page));
+
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        page.WaitForAssertion(() => Assert.Equal(["2"], Values(page)));
+    }
+
+    [Fact]
+    public void A_Feature_missing_at_the_selected_Action_says_it_did_not_exist_then()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter", "Auth"]));
+        Dispatch("c1", Id("aaaa"), 2, "App.Login", "Auth");
+        var page = Render<Home>();
+
+        page.FindAll("[data-test=action-row]")[0].Click();
+        page.Find("[data-test=feature-picker] select").Change("Auth");
+
+        Assert.Equal("Auth didn't exist at this point", page.Find("[data-test=state-missing]").TextContent.Trim());
+        Assert.Empty(page.FindAll("[data-test=state]"));
+    }
+
+    [Fact]
+    public void A_state_that_failed_to_serialise_shows_as_an_error_but_other_error_properties_are_data()
+    {
+        registry.SnapshotReceived("c1", new Snapshot(ProtocolVersion.Current, Id("aaaa"), "MyApp", Runtime.Server, DateTimeOffset.UtcNow, 0, 0,
+            [new FeatureState("Broken", "App.BrokenState", """{"$error":"Cycle detected"}"""),
+             new FeatureState("Odd", "App.OddState", """{"$error":"not really","count":1}""")]));
+        var page = Render<Home>();
+
+        page.Find("[data-test=feature-picker] select").Change("Broken");
+        Assert.Equal("Couldn't serialise Broken: Cycle detected", page.Find("[data-test=state-error]").TextContent.Trim());
+        Assert.Empty(page.FindAll("[data-test=json-tree]"));
+
+        page.Find("[data-test=feature-picker] select").Change("Odd");
+        Assert.Empty(page.FindAll("[data-test=state-error]"));
+        Assert.Equal(["\"not really\"", "1"], Values(page));
+    }
+
+    private static Snapshot Nested(Guid sessionId, string appName, params string[] features) => new(
+        ProtocolVersion.Current, sessionId, appName, Runtime.Server, DateTimeOffset.UtcNow, 0, 0,
+        [.. features.Select(f => new FeatureState(f, $"App.{f}State", """{"a":{"b":{"c":1}}}"""))]);
+
+    private static bool Open(IRenderedComponent<Home> page, string path) =>
+        page.FindAll($"[data-test=state] [data-path='{path}'] > [data-test=toggle]") is [var toggle]
+        && toggle.GetAttribute("aria-expanded") == "true";
+
+    [Fact]
+    public void Expand_and_collapse_choices_belong_to_the_Feature_and_survive_changing_Action_and_Session()
+    {
+        registry.SnapshotReceived("c1", Nested(Id("aaaa"), "MyApp", "Auth", "Counter"));
+        registry.SnapshotReceived("c2", Nested(Id("bbbb"), "Other", "Counter"));
+        registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, At, "App.Increment", "{}",
+            [new FeatureState("Counter", "App.CounterState", """{"a":{"b":{"c":2}}}""")])]);
+        var page = Render<Home>();
+        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        page.Find("[data-test=feature-picker] select").Change("Counter");
+
+        page.Find("[data-test=state] [data-path='$.a.b'] > [data-test=toggle]").Click();
+        Assert.True(Open(page, "$.a.b"));
+
+        page.Find("[data-test=feature-picker] select").Change("Auth");
+        Assert.False(Open(page, "$.a.b"));
+
+        page.Find("[data-test=feature-picker] select").Change("Counter");
+        Assert.True(Open(page, "$.a.b"));
+
+        page.Find("[data-test=action-row]").Click();
+        Assert.True(Open(page, "$.a.b"));
+
+        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        Assert.True(Open(page, "$.a.b"));
     }
 }
