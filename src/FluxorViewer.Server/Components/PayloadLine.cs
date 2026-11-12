@@ -17,28 +17,34 @@ public sealed record PayloadLine(string Text, bool CanExpand)
 
     private static readonly JsonWriterOptions Readable = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
+    /// <summary>The line for <paramref name="json"/>; malformed JSON is shown as received, without a tree to open.</summary>
     public static PayloadLine Of(string json)
     {
         try
         {
             using var document = ReceivedJson.Parse(json);
-            var root = document.RootElement;
-            var canExpand = root.ValueKind switch
-            {
-                JsonValueKind.Object => root.EnumerateObject().Any(),
-                JsonValueKind.Array => root.GetArrayLength() > 0,
-                _ => false,
-            };
-
-            var buffer = new MemoryStream();
-            using (var writer = new Utf8JsonWriter(buffer, Readable))
-                root.WriteTo(writer);
-            return new PayloadLine(Cut(Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length)), canExpand);
+            return new PayloadLine(Cut(Compact(document.RootElement)), HasChildren(document.RootElement));
         }
         catch (JsonException)
         {
             return new PayloadLine(Cut(json), false);
         }
+    }
+
+    private static bool HasChildren(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.Object => element.EnumerateObject().Any(),
+        JsonValueKind.Array => element.GetArrayLength() > 0,
+        _ => false,
+    };
+
+    /// <summary>The element as compact JSON, strings decoded and numbers as received.</summary>
+    private static string Compact(JsonElement element)
+    {
+        var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer, Readable))
+            element.WriteTo(writer);
+        return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
     }
 
     /// <summary>Cuts to <see cref="MaxLength"/>, never between the halves of a surrogate pair.</summary>
