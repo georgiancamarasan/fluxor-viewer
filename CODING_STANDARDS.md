@@ -2,7 +2,7 @@
 
 How code and tests in this repo should be written. It follows *Clean Code* (Robert C. Martin), adapted to C# and to this codebase. Reviewers cite rules by ID (e.g. **F2**).
 
-**Scope.** Apply the rules to code the change adds or edits. Report older code only when the change makes it worse, for example by adding a fifth parameter or another level of nesting to a long method.
+**Scope.** By default, apply the rules to code the change adds or edits. Report older code only when the change makes it worse, for example by adding a fifth parameter or another level of nesting to a long method. When a whole-repo review is requested, apply every rule to all code.
 
 **Severity.** **Must** rules are hard: report a breach as a violation. **Prefer** rules are judgement calls: report a breach with its trade-off, and accept a short reason in the code or commit for keeping it.
 
