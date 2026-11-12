@@ -52,6 +52,10 @@ _Avoid_: Log, timeline, journal
 The most entries the Viewer keeps in a Session's History; once it's reached, the oldest are discarded to make room. Discarded entries reached the Viewer, unlike lost Actions.
 _Avoid_: Cap, buffer size, max history
 
+**Dropped Action**:
+An Action the Host app recorded but never sent, because its buffer was full while it couldn't send fast enough or at all; the Viewer counts it among the lost Actions of the next Resync.
+_Avoid_: Discarded, evicted, overflowed
+
 **Sequence**:
 The position of an Action in its Session's history, counting from 1; a gap means Actions were lost.
 _Avoid_: Index, id, counter

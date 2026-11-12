@@ -37,7 +37,7 @@ Tooling already enforces nullable reference types, warnings as errors and centra
 
 - **C1 — Code first (Prefer).** Before writing a comment, try to make the code say it with a better name or an extracted method.
 - **C2 — Comments explain why (Must).** A comment gives a reason, an intent, a warning or a reference (an ADR or story ID), never a narration of what the next line does. Delete commented-out code.
-- **C3 — XML docs on public members (Must).** Every public type and member has a `<summary>` written in domain terms. Document parameters whose meaning the name can't carry, and any exceptions callers must handle.
+- **C3 — XML docs on public members (Must).** Every public type and member has a `<summary>` written in domain terms. Document parameters whose meaning the name can't carry, and any exceptions callers must handle. Test classes and test methods are exempt (their names are the spec); shared test support (fixtures, fakes, harnesses) is not.
 - **C4 — Docs follow code (Must).** A change to behaviour described in [docs/architecture.md](docs/architecture.md) updates it in the same commit. A decision that is hard to reverse, surprising and a real trade-off gets an ADR in [docs/adr/](docs/adr/).
 
 ## Errors and boundaries
