@@ -129,7 +129,10 @@ Why changed-Features-only plus Snapshots instead of full state every time: see [
   - Actions that didn't change the selected Feature are dimmed but selectable; a "changed only" toggle hides them (disabled without a selected Feature). A text box filters by short name, case-insensitive. Both belong to the Viewer tab and survive switching Session; "Show all" clears them when nothing matches.
   - Clicking a row selects the Action, by Sequence. The selection is cleared when switching Session or when the Action leaves the History (Clear, the cap), and kept while its row is hidden.
   - Resync marker rows arrive with IN-5.
-- **Right pane**: payload strip for the selected Action; **State** tab = the selected Feature's state *after* the selected Action; **Diff** tab = before → after rendered with `jsondiffpatch` via JS interop, or "No change to <Feature>".
+- **Right pane**: payload strip for the selected Action; **State** tab = the selected Feature's state *after* the selected Action, or the Session's current state with no Action selected, under a header `StateType · after #N ActionType` (or `· current`); **Diff** tab = before → after rendered with `jsondiffpatch` via JS interop, or "No change to <Feature>".
+  - The state is a JSON tree, a recursive Blazor component over `JsonDocument` (shared with the payload strip) that renders a node's children only once it's expanded. Two levels are open by default; arrays over 100 items are split into collapsed ranges of 100.
+  - Expand/collapse is stored only as the developer's explicit toggles, keyed by JSON path, per Feature name, for the Viewer tab, so they carry across Actions and Sessions wherever the path exists and are kept while it doesn't.
+  - A Feature state that is exactly `{"$error": "…"}` shows as an error instead of a tree; a Feature missing from the selected Action's state shows "<Feature> didn't exist at this point".
 - **Follow mode**: on by default, so the newest Action stays selected. Selecting an older Action pauses it and a "▼ N new" pill appears; clicking the pill resumes follow mode.
 
 Updates reach the developer's browser through the Blazor Server circuit; no extra hub is needed for the UI.
