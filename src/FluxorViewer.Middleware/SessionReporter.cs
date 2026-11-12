@@ -87,11 +87,13 @@ internal sealed class SessionReporter(
                 for (var i = 0; i < features.Length; i++)
                 {
                     var state = features[i].GetState();
-                    if (ReferenceEquals(state, states[i]))
-                        continue;
-                    states[i] = state;
-                    (changed ??= []).Add(new TrackedState(features[i], state));
+                    if (!ReferenceEquals(state, states[i]))
+                        (changed ??= []).Add(new TrackedState(features[i], state));
                 }
+
+                // Only once every Feature was read: if one throws, the changes found so far go with the next Action.
+                foreach (var tracked in changed ?? [])
+                    states[featureIndex[tracked.Feature]] = tracked.State;
 
                 if (stopped)
                     return;

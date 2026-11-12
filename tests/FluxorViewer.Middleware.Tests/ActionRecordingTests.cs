@@ -151,6 +151,23 @@ public class ActionRecordingTests
         Assert.Equal(LogLevel.Debug, debug.Level);
     }
 
+    [Fact]
+    public async Task A_state_change_in_an_Action_that_failed_to_record_goes_with_the_next_Action()
+    {
+        await using var harness = new Harness();
+        var (connection, _) = await harness.StartConnected();
+        var flaky = harness.Get<FlakyFeature>();
+        flaky.Throw = true;
+        harness.Dispatcher.Dispatch(new IncrementAction()); // Counter 0 → 1, but recording fails.
+        flaky.Throw = false;
+
+        harness.Dispatcher.Dispatch(new RenameAction("Grace"));
+
+        var action = Assert.Single(await Harness.ActionsSent(connection, 1));
+        Assert.Equal(["Counter", "Profile"], action.ChangedFeatures.Select(f => f.Name).Order());
+        Assert.Equal(1, Count(action.ChangedFeatures.Single(f => f.Name == "Counter")));
+    }
+
     [Theory]
     [InlineData(typeof(IncrementAction), "FluxorViewer.Middleware.Tests.IncrementAction")]
     [InlineData(typeof(Items.LoadedAction<Item>), "FluxorViewer.Middleware.Tests.Items.LoadedAction<FluxorViewer.Middleware.Tests.Item>")]
