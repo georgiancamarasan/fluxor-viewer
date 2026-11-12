@@ -17,11 +17,11 @@ builder.Services.AddSingleton<IngestRejections>();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
 // Real Snapshots easily exceed SignalR's 32 KB default; the Viewer only listens on localhost.
-builder.Services.AddSignalR(o => o.MaximumReceiveMessageSize = IngestLimits.MaximumMessageSize);
+builder.Services.AddSignalR(o => o.MaximumReceiveMessageSize = IngestRules.MaximumMessageSize);
 
 // WebAssembly Host apps connect from the browser, so allow any loopback origin.
-builder.Services.AddCors(o => o.AddPolicy(IngestLimits.CorsPolicy, p => p
-    .SetIsOriginAllowed(IngestLimits.IsAllowedOrigin)
+builder.Services.AddCors(o => o.AddPolicy(IngestRules.CorsPolicy, p => p
+    .SetIsOriginAllowed(IngestRules.IsAllowedOrigin)
     .AllowAnyHeader()
     .AllowAnyMethod()
     .AllowCredentials()));
@@ -29,7 +29,7 @@ builder.Services.AddCors(o => o.AddPolicy(IngestLimits.CorsPolicy, p => p
 var app = builder.Build();
 
 app.UseCors();
-app.MapHub<IngestHub>(IngestHub.Path).RequireCors(IngestLimits.CorsPolicy);
+app.MapHub<IngestHub>(IngestHub.Path).RequireCors(IngestRules.CorsPolicy);
 app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();

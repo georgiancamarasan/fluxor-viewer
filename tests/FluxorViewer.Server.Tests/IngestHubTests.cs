@@ -241,5 +241,5 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
 
     [Fact]
     public void Maximum_message_size_is_32_MB() =>
-        Assert.Equal(32 * 1024 * 1024, IngestLimits.MaximumMessageSize);
+        Assert.Equal(32 * 1024 * 1024, IngestRules.MaximumMessageSize);
 }
