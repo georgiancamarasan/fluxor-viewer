@@ -11,7 +11,8 @@ namespace FluxorViewer.Server.Ingest;
 /// </summary>
 public sealed class IngestHub(ISessionRegistry registry, IngestRejections rejections) : Hub
 {
-    public const string Path = "/hub/ingest";
+    /// <summary>Where the hub is mapped on the Viewer.</summary>
+    public const string Path = "/" + IngestHubContract.Path;
 
     private const string BoundSessionKey = "FluxorViewer.SessionId";
 

@@ -31,7 +31,7 @@ internal sealed class SignalRViewerConnectionFactory : IViewerConnectionFactory
     internal static Uri HubUrl(Uri serverUrl)
     {
         var baseUrl = serverUrl.AbsoluteUri.EndsWith('/') ? serverUrl : new Uri(serverUrl.AbsoluteUri + "/");
-        return new Uri(baseUrl, "hub/ingest");
+        return new Uri(baseUrl, IngestHubContract.Path);
     }
 
     private sealed class SignalRViewerConnection : IViewerConnection
@@ -54,10 +54,10 @@ internal sealed class SignalRViewerConnectionFactory : IViewerConnectionFactory
         public Task StartAsync(CancellationToken cancellationToken) => hub.StartAsync(cancellationToken);
 
         public Task SendSnapshotAsync(Snapshot snapshot, CancellationToken cancellationToken) =>
-            hub.InvokeAsync("Snapshot", snapshot, cancellationToken);
+            hub.InvokeAsync(IngestHubContract.Snapshot, snapshot, cancellationToken);
 
         public Task SendActionsAsync(IReadOnlyList<ActionRecorded> actions, CancellationToken cancellationToken) =>
-            hub.InvokeAsync("Actions", actions.ToArray(), cancellationToken);
+            hub.InvokeAsync(IngestHubContract.Actions, actions.ToArray(), cancellationToken);
 
         public ValueTask DisposeAsync() => hub.DisposeAsync();
     }
