@@ -1,5 +1,3 @@
-using System.Collections.Frozen;
-using System.Collections.Immutable;
 using FluxorViewer.Protocol;
 
 namespace FluxorViewer.Server.Sessions;
@@ -14,7 +12,7 @@ namespace FluxorViewer.Server.Sessions;
 public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvider time, HistoryLimit limit) : ISessionRegistry
 {
     private readonly Lock gate = new();
-    private readonly Dictionary<Guid, Entry> sessions = [];
+    private readonly Dictionary<Guid, KnownSession> sessions = [];
     private readonly Dictionary<string, Guid> connections = [];
     private long seen;
 
@@ -28,89 +26,56 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
     /// <summary>The most entries each Session's History keeps.</summary>
     public HistoryLimit Limit => limit;
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A Snapshot older than what the Session already sent breaks ADR 0005; it's still taken, as a Resync with no lost
+    /// count, and logged at Warning once per Session.
+    /// </remarks>
     public void SnapshotReceived(string connectionId, Snapshot snapshot)
     {
-        List<SessionChange> changes = [];
+        List<SessionChange?> changes = [];
         lock (gate)
         {
-            long? lost;
-            // The lost Actions end at the Snapshot; they can't start before the first one this Viewer didn't receive.
-            long firstUnreceived;
-            if (!sessions.TryGetValue(snapshot.SessionId, out var session))
-            {
-                sessions[snapshot.SessionId] = session = new Entry(snapshot, ++seen, limit);
-                changes.Add(new SessionAdded(snapshot.SessionId));
-                // Actions before a new Session's first Snapshot predate this Viewer; only the dropped ones were lost.
-                lost = snapshot.DroppedCount;
-                firstUnreceived = 1;
-            }
-            else
-            {
-                if (session.ConnectionId is null)
-                    changes.Add(new SessionStatusChanged(snapshot.SessionId, SessionStatus.Connected));
-                lost = Math.Max(snapshot.DroppedCount, snapshot.LastSequence - session.LastSequence);
-                firstUnreceived = session.LastSequence + 1;
-                if (snapshot.LastSequence < session.LastSequence)
-                {
-                    // The middleware never sends one (ADR 0005); if it does, take it without rewinding the History.
-                    lost = null;
-                    if (!session.WarnedOlderSnapshot)
-                    {
-                        session.WarnedOlderSnapshot = true;
-                        logger.LogWarning(
-                            "Session {SessionId} sent a Snapshot at Sequence {LastSequence}, older than the {Received} already received; recorded as a Resync.",
-                            snapshot.SessionId, snapshot.LastSequence, session.LastSequence);
-                    }
-                }
-            }
-
-            if (lost is null or > 0)
-            {
-                long? firstLost = lost is { } n ? Math.Max(firstUnreceived, snapshot.LastSequence - n + 1) : null;
-                session.Append(new ResyncEntry(
-                    session.NextId(),
-                    snapshot.LastSequence,
-                    time.GetLocalNow(),
-                    lost,
-                    firstLost <= snapshot.LastSequence ? firstLost : null,
-                    FeatureMap.From(snapshot.Features)));
-                changes.Add(new EntriesAppended(snapshot.SessionId, 1));
-            }
-
-            session.Current = FeatureMap.From(snapshot.Features);
-            session.LastSequence = snapshot.LastSequence;
-            session.ConnectionId = connectionId;
+            var (session, change) = FindOrAdd(snapshot);
+            changes.Add(change);
+            var taken = session.Take(snapshot, connectionId, time.GetLocalNow());
             connections[connectionId] = snapshot.SessionId;
+            if (taken.ResyncAppended)
+                changes.Add(new EntriesAppended(snapshot.SessionId, 1));
+            if (taken.FirstOlderThan is { } received)
+                WarnOlderSnapshot(snapshot, received);
         }
         foreach (var change in changes)
             Raise(change);
     }
 
+    /// <inheritdoc/>
     public void ActionsReceived(string connectionId, IReadOnlyList<ActionRecorded> actions)
     {
         SessionChange? change = null;
         lock (gate)
         {
             // Actions from a connection the Session has moved away from are already covered by the newer Snapshot.
-            if (Current(connectionId) is not { } session)
+            if (ReportedBy(connectionId) is not { } session)
                 return;
             var appended = actions.Count(session.Record);
             if (appended > 0)
-                change = new EntriesAppended(session.First.SessionId, appended);
+                change = new EntriesAppended(session.SessionId, appended);
         }
         Raise(change);
     }
 
+    /// <inheritdoc/>
     public void ConnectionClosed(string connectionId)
     {
         SessionChange? change = null;
         lock (gate)
         {
             // A late close from a replaced connection leaves the Session connected through the newer one.
-            if (Current(connectionId) is { } session)
+            if (ReportedBy(connectionId) is { } session)
             {
-                session.ConnectionId = null;
-                change = new SessionStatusChanged(session.First.SessionId, SessionStatus.Disconnected);
+                session.Disconnect();
+                change = new SessionStatusChanged(session.SessionId, SessionStatus.Disconnected);
             }
             connections.Remove(connectionId);
         }
@@ -139,14 +104,37 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
     public IReadOnlyList<ReceivedSession> GetSessions()
     {
         lock (gate)
-            return sessions.Values.OrderBy(s => s.Seen).Select(s => s.ToView()).ToList();
+            return sessions.Values.OrderBy(s => s.SeenOrder).Select(s => s.ToView()).ToList();
     }
 
+    /// <summary>A copy of the Session with this id, safe to read while ingestion continues; null if there's none.</summary>
     public ReceivedSession? Find(Guid sessionId)
     {
         lock (gate)
             return sessions.TryGetValue(sessionId, out var session) ? session.ToView() : null;
     }
+
+    /// <summary>The Session the Snapshot is for, added if it's new, and whether that's a new or reconnected Session.</summary>
+    private (KnownSession Session, SessionChange? Change) FindOrAdd(Snapshot snapshot)
+    {
+        if (sessions.TryGetValue(snapshot.SessionId, out var known))
+            return (known, known.ConnectionId is null ? new SessionStatusChanged(snapshot.SessionId, SessionStatus.Connected) : null);
+        var added = sessions[snapshot.SessionId] = new KnownSession(snapshot, ++seen, limit);
+        return (added, new SessionAdded(snapshot.SessionId));
+    }
+
+    /// <summary>The Session <paramref name="connectionId"/> reports, if that connection is still the Session's current one.</summary>
+    private KnownSession? ReportedBy(string connectionId) =>
+        connections.TryGetValue(connectionId, out var sessionId)
+        && sessions.TryGetValue(sessionId, out var session)
+        && session.ConnectionId == connectionId
+            ? session
+            : null;
+
+    private void WarnOlderSnapshot(Snapshot snapshot, long received) =>
+        logger.LogWarning(
+            "Session {SessionId} sent a Snapshot at Sequence {LastSequence}, older than the {Received} already received; recorded as a Resync.",
+            snapshot.SessionId, snapshot.LastSequence, received);
 
     private void Raise(SessionChange? change)
     {
@@ -164,160 +152,4 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
             }
         }
     }
-
-    /// <summary>The Session <paramref name="connectionId"/> reports, if that connection is still the Session's current one.</summary>
-    private Entry? Current(string connectionId) =>
-        connections.TryGetValue(connectionId, out var sessionId)
-        && sessions.TryGetValue(sessionId, out var session)
-        && session.ConnectionId == connectionId
-            ? session
-            : null;
-
-    private sealed class Entry(Snapshot first, long seen, HistoryLimit limit)
-    {
-        public long Seen { get; } = seen;
-        public Snapshot First { get; } = first;
-        private readonly List<HistoryEntry> history = [];
-
-        public IReadOnlyList<HistoryEntry> History => history;
-        public ImmutableDictionary<string, FeatureState> Current { get; set; } = FeatureMap.Empty;
-        public long LastSequence { get; set; }
-        public string? ConnectionId { get; set; }
-        public bool WarnedOlderSnapshot { get; set; }
-
-        /// <summary>Whether entries were discarded to keep the History within its limit, since the last Clear.</summary>
-        public bool HasDiscarded { get; private set; }
-
-        private long lastId;
-
-        /// <summary>The Id for the next entry appended to the History; never reused, even after Clear.</summary>
-        public long NextId() => ++lastId;
-
-        /// <summary>
-        /// Appends the Action with the state before it and after it; only its Changed Features are new. An Action at or
-        /// before the last received Sequence is a duplicate and ignored; returns whether it was appended.
-        /// </summary>
-        public bool Record(ActionRecorded action)
-        {
-            if (action.Sequence <= LastSequence)
-                return false;
-            var before = Current;
-            var after = before.SetItems(action.ChangedFeatures.Select(f => KeyValuePair.Create(f.Name, f)));
-            Append(new ActionEntry(
-                NextId(),
-                action.Sequence,
-                action.Timestamp,
-                action.ActionType,
-                action.ActionJson,
-                action.ChangedFeatures.Select(f => f.Name).ToFrozenSet(),
-                before,
-                after));
-            Current = after;
-            LastSequence = action.Sequence;
-            return true;
-        }
-
-        /// <summary>Appends an entry to the History, discarding the oldest if that takes it past the limit.</summary>
-        public void Append(HistoryEntry entry)
-        {
-            history.Add(entry);
-            if (history.Count <= limit.Value)
-                return;
-            history.RemoveAt(0);
-            HasDiscarded = true;
-        }
-
-        /// <summary>Empties the History; the current Feature states and last Sequence stay as the new starting point.</summary>
-        public void ClearHistory()
-        {
-            history.Clear();
-            HasDiscarded = false;
-        }
-
-        public ReceivedSession ToView() => new(
-            First.SessionId, First.AppName, First.Runtime, First.StartedAt, ConnectionId, [.. History], Current, LastSequence)
-        {
-            HasDiscarded = HasDiscarded,
-        };
-    }
-}
-
-/// <summary>Feature states keyed by Feature name. Maps are immutable and share unchanged states.</summary>
-internal static class FeatureMap
-{
-    public static readonly ImmutableDictionary<string, FeatureState> Empty = ImmutableDictionary<string, FeatureState>.Empty;
-
-    public static ImmutableDictionary<string, FeatureState> From(IEnumerable<FeatureState> features) =>
-        Empty.SetItems(features.Select(f => KeyValuePair.Create(f.Name, f)));
-}
-
-/// <summary>Whether the Viewer currently has a connection for a Session. Disconnected Sessions may still reconnect.</summary>
-public enum SessionStatus
-{
-    Connected,
-    Disconnected,
-}
-
-/// <summary>One point in a Session's History, with the Feature states after it.</summary>
-/// <param name="Id">
-/// Identifies the entry within its Session, increasing in the order entries were appended and never reused. Unlike the
-/// Sequence, it's unique: a Resync shares its Sequence with the Action before it, and after an older Snapshot the
-/// History may hold Actions with the same Sequence twice.
-/// </param>
-/// <param name="Sequence">The Action's Sequence, or the Snapshot's <c>LastSequence</c> for a Resync.</param>
-public abstract record HistoryEntry(long Id, long Sequence, ImmutableDictionary<string, FeatureState> After);
-
-/// <summary>An Action in the History.</summary>
-/// <param name="ChangedFeatures">Names of the Features whose state this Action replaced.</param>
-/// <param name="Before">Feature states before this Action. Unchanged Features share their instances with <paramref name="After"/>.</param>
-public sealed record ActionEntry(
-    long Id,
-    long Sequence,
-    DateTimeOffset Timestamp,
-    string ActionType,
-    string ActionJson,
-    IReadOnlySet<string> ChangedFeatures,
-    ImmutableDictionary<string, FeatureState> Before,
-    ImmutableDictionary<string, FeatureState> After) : HistoryEntry(Id, Sequence, After);
-
-/// <summary>A Snapshot that didn't follow on from what the Viewer already had.</summary>
-/// <param name="Sequence">The Snapshot's <c>LastSequence</c>: the Resync sits just after the last Action it covers.</param>
-/// <param name="ReceivedAt">When the Viewer received the Snapshot.</param>
-/// <param name="Lost">How many Actions the Viewer missed before it; null when the Snapshot was older than what the Viewer had.</param>
-/// <param name="FirstLost">
-/// The Sequence of the first lost Action, the rest running up to <paramref name="Sequence"/>; null when the Viewer can't
-/// tell which were lost.
-/// </param>
-/// <param name="After">The Snapshot's Feature states.</param>
-public sealed record ResyncEntry(
-    long Id,
-    long Sequence,
-    DateTimeOffset ReceivedAt,
-    long? Lost,
-    long? FirstLost,
-    ImmutableDictionary<string, FeatureState> After) : HistoryEntry(Id, Sequence, After);
-
-/// <summary>A Session as received so far.</summary>
-/// <param name="ConnectionId">The hub connection currently reporting it, or null once that closed.</param>
-/// <param name="Current">Feature states after the latest Action or Snapshot; kept when the History is cleared.</param>
-/// <param name="LastSequence">The Sequence of the latest Action or Snapshot received.</param>
-public sealed record ReceivedSession(
-    Guid SessionId,
-    string AppName,
-    Runtime Runtime,
-    DateTimeOffset StartedAt,
-    string? ConnectionId,
-    IReadOnlyList<HistoryEntry> History,
-    ImmutableDictionary<string, FeatureState> Current,
-    long LastSequence)
-{
-    /// <summary>The first four hex characters of the SessionId; a display label only, and not unique.</summary>
-    public string ShortId => SessionId.ToString("N")[..4];
-
-    public SessionStatus Status => ConnectionId is null ? SessionStatus.Disconnected : SessionStatus.Connected;
-
-    /// <summary>Whether older entries were discarded to keep the History within its limit, since the last Clear.</summary>
-    public bool HasDiscarded { get; init; }
-
-    public IEnumerable<ActionEntry> Actions => History.OfType<ActionEntry>();
 }
