@@ -141,6 +141,10 @@ Why changed-Features-only plus Snapshots instead of full state every time: see [
   - Selecting any other row pauses it. Selecting the newest visible row, or clicking the pill, resumes it, and so does losing the selection (switching Session, Clear, the cap evicting the selected Action).
   - While paused, a "▼ N new" pill floats at the bottom right of the list, counting the visible rows newer than the last Sequence in the History when it paused; it's hidden while N is 0.
   - While following, the list scrolls to the bottom (a collocated JS module, `ActionListPane.razor.js`) whenever the newest visible row changes or follow mode turns on. While paused it never scrolls by itself, and scrolling by hand doesn't pause it.
+- **Clear** (header button) clears the selected Session only. It's enabled whenever a Session is selected, except a connected one whose History is already empty.
+  - Clicking it swaps the button for an inline prompt in the header, with no dialog and no JS: the text first, then [Clear] [Cancel], so a double-click on Clear can't land on the confirm button. Focus goes to Cancel. The text follows the Session's status as it is now: "Remove disconnected Session MyApp · 3f2a?" or "Clear N Actions from MyApp · 3f2a?", with N counting live.
+  - The prompt is cancelled by Cancel, Escape, a change of selected Session (including following a reloaded app), or Clear becoming disabled (e.g. another Viewer tab cleared it first). Clicking elsewhere doesn't cancel it. Confirming calls `SessionRegistry.Clear`, which acts on the status and History at that moment.
+  - Afterwards nothing is special to Clear: a removed Session empties the selection and the usual `SessionSelection` rules apply. A kept Session shows "No Actions yet", Follow mode turns back on and the State tab shows current state. The filter, toggle, tree choices and State/Diff tab are kept, and no marker row is added. Every Viewer tab sees it through `SessionCleared`.
 
 Updates reach the developer's browser through the Blazor Server circuit; no extra hub is needed for the UI.
 
