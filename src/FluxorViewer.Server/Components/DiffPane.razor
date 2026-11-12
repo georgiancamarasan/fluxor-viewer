@@ -42,6 +42,9 @@
                     <p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 font-mono text-sm text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
                        data-test="diff-error">Couldn't serialise @Feature @error.Side this Action: @error.Message</p>
                     break;
+                case FeatureDiff.Changes when unreadable is not null:
+                    <p class="state-error" data-test="diff-error">Couldn't diff @Feature at this Action: @unreadable</p>
+                    break;
                 case FeatureDiff.Changes:
                     @if (!hasDifference)
                     {
@@ -80,6 +83,9 @@
     // Whether the browser found a difference in the JSON last diffed; it can't when numbers differ only beyond 2^53.
     private bool hasDifference = true;
 
+    // Why the browser couldn't diff the JSON last requested (e.g. it isn't valid JSON); null when it could.
+    private string? unreadable;
+
     protected override void OnParametersSet()
     {
         diff = Feature is null ? null : FeatureDiff.For(Entry, Feature);
@@ -88,7 +94,10 @@
             rendered = default;
         // Until the browser says otherwise, a new before → after is assumed to differ, so a stale message doesn't linger.
         if (!ReferenceEquals(rendered.Action, Action) || rendered.Feature != Feature)
+        {
             hasDifference = true;
+            unreadable = null;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -99,13 +108,29 @@
         if (Same(rendered, requested))
             return;
         rendered = requested;
-        module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/DiffPane.razor.js");
-        var found = await module.InvokeAsync<bool>("render", host, changes.Before, changes.After, ShowUnchanged);
+        var (found, failure) = await DiffInBrowserAsync(changes);
         // Follow mode may have moved on while the browser was diffing; that later diff decides.
-        if (Same(rendered, requested) && found != hasDifference)
+        if (Same(rendered, requested) && (found != hasDifference || failure != unreadable))
         {
-            hasDifference = found;
+            (hasDifference, unreadable) = (found, failure);
             StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Diffs in the browser; whether it found a difference, or why it couldn't read the JSON. A rendering failure
+    /// mustn't escape, or it would end the developer's circuit.
+    /// </summary>
+    private async Task<(bool Found, string? Failure)> DiffInBrowserAsync(FeatureDiff.Changes changes)
+    {
+        try
+        {
+            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/DiffPane.razor.js");
+            return (await module.InvokeAsync<bool>("render", host, changes.Before, changes.After, ShowUnchanged), null);
+        }
+        catch (JSException ex)
+        {
+            return (true, ex.Message);
         }
     }
 

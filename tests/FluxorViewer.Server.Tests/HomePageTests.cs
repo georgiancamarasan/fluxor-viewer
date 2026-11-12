@@ -4,6 +4,7 @@ using FluxorViewer.Server.Components.Pages;
 using FluxorViewer.Server.Sessions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.JSInterop;
 
 namespace FluxorViewer.Server.Tests;
 
@@ -655,6 +656,23 @@ public class HomePageTests : BunitContext
         var render = Assert.Single(DiffRenders);
         Assert.Equal(["""{"v":1}""", """{"v":2}""", false], render.Arguments.Skip(1));
         Assert.Empty(page.FindAll("[data-test=diff-message]"));
+    }
+
+    [Fact]
+    public void State_the_browser_cannot_read_shows_an_error_in_the_Diff_tab_instead_of_ending_the_page()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
+        registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, At, "App.Break", "{}",
+            [new FeatureState("Counter", "App.CounterState", "{not json")])]);
+        diff.Setup<bool>("render", call => Equals(call.Arguments[2], "{not json"))
+            .SetException(new JSException("Unexpected token 'n', \"{not json\" is not valid JSON"));
+        var page = Render<Home>();
+
+        ShowTab(page, "Diff");
+
+        page.WaitForAssertion(() => Assert.Equal(
+            "Couldn't diff Counter at this Action: Unexpected token 'n', \"{not json\" is not valid JSON",
+            page.Find("[data-test=diff-error]").TextContent.Trim()));
     }
 
     [Fact]
