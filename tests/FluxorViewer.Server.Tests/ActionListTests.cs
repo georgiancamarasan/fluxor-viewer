@@ -172,7 +172,6 @@ public class ActionListTests
         Assert.Equal(1, list.Selected?.Sequence);
 
         list.Filter = "nothing";
-        list.Refilter();
         Assert.Null(list.Selected);
         Assert.True(list.Following);
     }
@@ -224,7 +223,6 @@ public class ActionListTests
         list.Update(Session(id, Action(1, "App.A"), Action(2, "App.A"), Action(3, "App.A"), Action(4, "App.B")), null);
 
         list.Filter = "A";
-        list.Refilter();
 
         Assert.Equal(1, list.NewCount);
     }

@@ -7,6 +7,7 @@ public abstract record ListRow
 {
     private protected ListRow() { }
 
+    /// <summary>The History entry the row shows.</summary>
     public abstract HistoryEntry Entry { get; }
 
     /// <summary>The time the row shows: when the Action was dispatched, or when the Viewer received the Resync.</summary>
@@ -17,16 +18,20 @@ public abstract record ListRow
 /// <param name="Dimmed">The Action didn't change the selected Feature.</param>
 public sealed record ActionRow(ActionEntry Action, string ShortName, bool Dimmed) : ListRow
 {
+    /// <inheritdoc/>
     public override HistoryEntry Entry => Action;
 
+    /// <inheritdoc/>
     public override DateTimeOffset At => Action.Timestamp;
 }
 
 /// <summary>A Resync's row; the filter and "changed only" never hide it.</summary>
 public sealed record ResyncRow(ResyncEntry Resync) : ListRow
 {
+    /// <inheritdoc/>
     public override HistoryEntry Entry => Resync;
 
+    /// <inheritdoc/>
     public override DateTimeOffset At => Resync.ReceivedAt;
 
     /// <summary>"⚠ resync — N actions lost", or just "⚠ resync" when the Snapshot was older than what the Viewer had.</summary>
@@ -61,12 +66,36 @@ public sealed class ActionList
     private IReadOnlyList<HistoryEntry> entries = [];
     private string? feature;
     private readonly Dictionary<string, string> shortNames = [];
+    private string filter = "";
+    private bool changedOnly;
 
-    /// <summary>Case-insensitive substring of the Action type's short name; blank shows every Action.</summary>
-    public string Filter { get; set; } = "";
+    /// <summary>
+    /// Case-insensitive substring of the Action type's short name; blank shows every Action. Setting it re-filters the
+    /// rows (and, while following, moves the selection).
+    /// </summary>
+    public string Filter
+    {
+        get => filter;
+        set
+        {
+            filter = value;
+            Refilter();
+        }
+    }
 
-    /// <summary>Hide Actions that didn't change the selected Feature. No effect without a selected Feature.</summary>
-    public bool ChangedOnly { get; set; }
+    /// <summary>
+    /// Hide Actions that didn't change the selected Feature; no effect without a selected Feature. Setting it re-filters
+    /// the rows (and, while following, moves the selection).
+    /// </summary>
+    public bool ChangedOnly
+    {
+        get => changedOnly;
+        set
+        {
+            changedOnly = value;
+            Refilter();
+        }
+    }
 
     /// <summary>Every Action in the selected Session, shown or not. Resyncs don't count.</summary>
     public int ActionCount { get; private set; }
@@ -74,8 +103,10 @@ public sealed class ActionList
     /// <summary>The Actions the filter and toggle leave visible; 0 means none match, though Resync rows may still show.</summary>
     public int VisibleActionCount { get; private set; }
 
+    /// <summary>The rows shown, oldest first: visible Actions and every Resync.</summary>
     public ListRow[] Rows { get; private set; } = [];
 
+    /// <summary>The selected Action or Resync, kept while its row is hidden; null when nothing is selected.</summary>
     public HistoryEntry? Selected { get; private set; }
 
     /// <summary>Follow mode: the newest visible row stays selected as entries arrive.</summary>
@@ -84,8 +115,8 @@ public sealed class ActionList
     /// <summary>Visible rows that arrived since follow mode paused; 0 while following.</summary>
     public int NewCount { get; private set; }
 
-    // The newest entry Id in the History when follow mode paused.
-    private long pausedAt;
+    // The "N new" pill counts rows appended after this one.
+    private long newestIdWhenPaused;
 
     /// <summary>
     /// The developer clicked the row of the entry with this Id. The newest visible row turns follow mode on, any other
@@ -99,7 +130,7 @@ public sealed class ActionList
         Selected = entry;
         Following = Rows is [.., var newest] && newest.Entry.Id == id;
         if (wasFollowing && !Following)
-            pausedAt = entries[^1].Id;
+            newestIdWhenPaused = entries[^1].Id;
         Refilter();
     }
 
@@ -113,8 +144,7 @@ public sealed class ActionList
     /// <summary>Clears the filter and the toggle.</summary>
     public void ShowAll()
     {
-        Filter = "";
-        ChangedOnly = false;
+        (filter, changedOnly) = ("", false);
         Refilter();
     }
 
@@ -135,33 +165,37 @@ public sealed class ActionList
         Refilter();
     }
 
-    /// <summary>Applies a changed filter or toggle.</summary>
-    public void Refilter()
+    /// <summary>Rebuilds the rows from the History, then keeps the selection on the newest row while following.</summary>
+    private void Refilter()
     {
-        var filter = Filter.Trim();
-        var changedOnly = ChangedOnly && feature is not null;
-        var rows = new List<ListRow>(entries.Count);
+        Rows = [.. VisibleRows()];
+        VisibleActionCount = Rows.Count(row => row is ActionRow);
+        if (Following)
+            Selected = Rows is [.., var newest] ? newest.Entry : null;
+        NewCount = Following ? 0 : Rows.Count(row => row.Entry.Id > newestIdWhenPaused);
+    }
+
+    /// <summary>Every Resync, and each Action the filter and toggle leave visible, oldest first.</summary>
+    private IEnumerable<ListRow> VisibleRows()
+    {
+        var text = filter.Trim();
+        var hideUnchanged = changedOnly && feature is not null;
         foreach (var entry in entries)
         {
             if (entry is ResyncEntry resync)
-            {
-                rows.Add(new ResyncRow(resync));
-                continue;
-            }
-            var action = (ActionEntry)entry;
-            var dimmed = feature is not null && !action.ChangedFeatures.Contains(feature);
-            if (dimmed && changedOnly)
-                continue;
-            var name = ShortName(action.ActionType);
-            if (filter.Length > 0 && !name.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                continue;
-            rows.Add(new ActionRow(action, name, dimmed));
+                yield return new ResyncRow(resync);
+            else if (VisibleRow((ActionEntry)entry, text, hideUnchanged) is { } row)
+                yield return row;
         }
-        Rows = [.. rows];
-        VisibleActionCount = rows.Count(r => r is ActionRow);
-        if (Following)
-            Selected = Rows is [.., var newest] ? newest.Entry : null;
-        NewCount = Following ? 0 : Rows.Count(r => r.Entry.Id > pausedAt);
+    }
+
+    /// <summary>The Action's row, or null when the filter <paramref name="text"/> or "changed only" hides it.</summary>
+    private ActionRow? VisibleRow(ActionEntry action, string text, bool hideUnchanged)
+    {
+        var dimmed = feature is not null && !action.ChangedFeatures.Contains(feature);
+        var name = ShortName(action.ActionType);
+        var hidden = (dimmed && hideUnchanged) || (text.Length > 0 && !name.Contains(text, StringComparison.OrdinalIgnoreCase));
+        return hidden ? null : new ActionRow(action, name, dimmed);
     }
 
     private HistoryEntry? Find(long id) => entries.FirstOrDefault(e => e.Id == id);
