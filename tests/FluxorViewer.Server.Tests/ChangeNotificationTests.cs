@@ -15,7 +15,7 @@ public class ChangeNotificationTests
 
     public ChangeNotificationTests()
     {
-        registry = new SessionRegistry(logger);
+        registry = new SessionRegistry(logger, TimeProvider.System);
         registry.Changed += changes.Add;
     }
 

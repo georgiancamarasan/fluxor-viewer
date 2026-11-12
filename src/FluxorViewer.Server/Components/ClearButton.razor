@@ -76,6 +76,9 @@ else
         if (session.Status == SessionStatus.Disconnected)
             return $"Remove disconnected Session {name}?";
         var count = session.Actions.Count();
+        // A History of Resyncs alone has no Actions to count.
+        if (count == 0)
+            return $"Clear the History of {name}?";
         return $"Clear {count.ToString("N0", CultureInfo.InvariantCulture)} {(count == 1 ? "Action" : "Actions")} from {name}?";
     }
 }

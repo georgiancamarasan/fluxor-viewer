@@ -88,10 +88,13 @@ console.log(`Session ${sessionId.slice(0, 4)} (${opts.app}): sending ${total} Ac
 
 const started = performance.now();
 let sent = 0;
+let nextResync = resyncEvery;
 for (let sequence = 1; sequence <= total; ) {
   const batch = [];
   for (; batch.length < batchSize && sequence <= total; sequence++, sent++) {
-    if (resyncEvery > 0 && sent > 0 && sent % resyncEvery === 0 && batch.length === 0) {
+    // Only between batches, so the Snapshot never overtakes Actions it covers.
+    if (resyncEvery > 0 && sent >= nextResync && batch.length === 0) {
+      nextResync += resyncEvery;
       sequence += dropped;
       await snapshot(sequence - 1, dropped);
     }

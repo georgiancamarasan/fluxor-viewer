@@ -16,12 +16,16 @@ public class ResyncPageTests : BunitContext
 
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, new FakeTimeProvider(ReceivedAt));
 
+    // The Diff tab's rendering, recorded rather than run: jsondiffpatch runs in the browser.
+    private readonly BunitJSModuleInterop diff;
+
     public ResyncPageTests()
     {
         Services.AddSingleton(registry);
         Services.AddSingleton(TimeProvider.System);
         JSInterop.SetupModule("./Components/ActionListPane.razor.js").SetupVoid("scrollToBottom", _ => true);
-        JSInterop.SetupModule("./Components/DiffPane.razor.js").Setup<bool>("render", _ => true).SetResult(true);
+        diff = JSInterop.SetupModule("./Components/DiffPane.razor.js");
+        diff.Setup<bool>("render", _ => true).SetResult(true);
     }
 
     private void Snapshot(long lastSequence, long droppedCount = 0, int count = 0) => registry.SnapshotReceived("c1", new Snapshot(
@@ -66,6 +70,24 @@ public class ResyncPageTests : BunitContext
         var page = Render<Home>();
 
         Assert.Equal("⚠ resync", RowTexts(page)[^1]);
+    }
+
+    [Fact]
+    public void Actions_sent_again_after_an_older_Snapshot_are_separate_rows_selected_separately()
+    {
+        Snapshot(0);
+        Dispatch(1);
+        Dispatch(2, "App.First");
+        Snapshot(1, count: 1);
+        Dispatch(2, "App.Again");
+        var page = Render<Home>();
+
+        Assert.Equal(["Increment", "First", "⚠ resync", "Again"], RowTexts(page));
+        page.FindAll("[data-test=action-row]")[1].Click();
+
+        Assert.Equal("true", page.FindAll("[data-test=action-row]")[1].GetAttribute("aria-selected"));
+        Assert.Equal("false", page.FindAll("[data-test=action-row]")[2].GetAttribute("aria-selected"));
+        Assert.Contains("First", page.Find("[data-test=state-header]").TextContent);
     }
 
     [Fact]
@@ -135,5 +157,62 @@ public class ResyncPageTests : BunitContext
 
         page.WaitForAssertion(() =>
             Assert.Equal("CounterState · after resync", page.Find("[data-test=state-header]").TextContent.Trim()));
+    }
+
+    [Fact]
+    public void The_lost_range_never_includes_Actions_the_Viewer_received()
+    {
+        Snapshot(0);
+        Dispatch(1);
+        Dispatch(2);
+        Dispatch(3);
+        Snapshot(5, droppedCount: 4, count: 5);
+
+        var page = Render<Home>();
+
+        var resync = page.Find("[data-test=resync]");
+        Assert.Equal("⚠ resync — 4 actions lost", resync.TextContent.Trim());
+        Assert.Equal("Actions #4–#5 were lost", resync.GetAttribute("title"));
+    }
+
+    [Fact]
+    public void Show_all_brings_back_the_Actions_around_a_Resync()
+    {
+        Snapshot(0);
+        Dispatch(1);
+        Snapshot(5, droppedCount: 4);
+        Dispatch(6);
+        var page = Render<Home>();
+        page.Find("[data-test=action-filter]").Input("nothing");
+
+        page.Find("[data-test=show-all]").Click();
+
+        Assert.Equal(["Increment", "⚠ resync — 4 actions lost", "Increment"], RowTexts(page));
+    }
+
+    [Fact]
+    public void The_Action_after_a_Resync_diffs_against_the_Snapshot()
+    {
+        Snapshot(0);
+        Dispatch(1);
+        Snapshot(9, droppedCount: 8, count: 9);
+        Dispatch(10);
+        var page = Render<Home>();
+
+        SelectTab(page, "Diff");
+
+        var render = Assert.Single(diff.Invocations["render"]);
+        Assert.Equal(["""{"Count":9}""", """{"Count":10}"""], render.Arguments.Skip(1).Take(2));
+    }
+
+    [Fact]
+    public void Clearing_a_connected_Session_with_only_a_Resync_asks_to_clear_its_History()
+    {
+        Snapshot(40, droppedCount: 12);
+        var page = Render<Home>();
+
+        page.Find("[data-test=clear]").Click();
+
+        Assert.StartsWith("Clear the History of MyApp · ", page.Find("[data-test=clear-question]").TextContent.Trim());
     }
 }

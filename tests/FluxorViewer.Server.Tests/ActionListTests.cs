@@ -11,12 +11,13 @@ public class ActionListTests
 {
     private readonly ActionList list = new();
 
-    private static ActionEntry Action(long sequence, string type = "App.IncrementAction", params string[] changed) => new(
-        sequence, DateTimeOffset.UtcNow, type, "{}", changed.ToFrozenSet(),
+    // An entry's Id defaults to its Sequence; tests that need them apart give it explicitly.
+    private static ActionEntry Action(long sequence, string type = "App.IncrementAction", long? id = null, params string[] changed) => new(
+        id ?? sequence, sequence, DateTimeOffset.UtcNow, type, "{}", changed.ToFrozenSet(),
         ImmutableDictionary<string, FeatureState>.Empty, ImmutableDictionary<string, FeatureState>.Empty);
 
-    private static ResyncEntry Resync(long sequence, long? lost = 1) => new(
-        sequence, DateTimeOffset.UtcNow, lost, ImmutableDictionary<string, FeatureState>.Empty);
+    private static ResyncEntry Resync(long sequence, long? lost = 1, long? id = null) => new(
+        id ?? sequence, sequence, DateTimeOffset.UtcNow, lost, null, ImmutableDictionary<string, FeatureState>.Empty);
 
     private static ReceivedSession Session(params HistoryEntry[] history) => Session(Guid.NewGuid(), history);
 
@@ -31,7 +32,7 @@ public class ActionListTests
         list.Update(Session(Action(1, "App.A"), Action(2, "App.Items.Loaded<App.Item>")), null);
 
         Assert.Equal([1, 2], Sequences);
-        Assert.Equal(["A", "Loaded<Item>"], list.Rows.Select(r => r.ShortName));
+        Assert.Equal(["A", "Loaded<Item>"], list.Rows.Cast<ActionRow>().Select(r => r.ShortName));
         Assert.Equal(2, list.ActionCount);
     }
 
@@ -49,7 +50,7 @@ public class ActionListTests
     {
         list.Update(Session(Action(1, changed: "Counter"), Action(2, changed: "Auth"), Action(3)), "Counter");
 
-        Assert.Equal([false, true, true], list.Rows.Select(r => r.Dimmed));
+        Assert.Equal([false, true, true], list.Rows.Cast<ActionRow>().Select(r => r.Dimmed));
     }
 
     [Fact]
@@ -60,7 +61,7 @@ public class ActionListTests
         list.Update(Session(Action(1, changed: "Counter"), Action(2)), null);
 
         Assert.Equal([1, 2], Sequences);
-        Assert.All(list.Rows, r => Assert.False(r.Dimmed));
+        Assert.All(list.Rows.Cast<ActionRow>(), r => Assert.False(r.Dimmed));
     }
 
     [Fact]
@@ -250,45 +251,46 @@ public class ActionListTests
         list.Filter = "nothing matches";
         list.ChangedOnly = true;
 
-        list.Update(Session(Action(1, changed: "Counter"), Resync(5), Action(6, changed: "Counter")), "Counter");
+        list.Update(Session(Action(1, changed: "Counter"), Resync(5, id: 2), Action(6, id: 3, changed: "Counter")), "Counter");
 
-        var row = Assert.Single(list.Rows);
-        Assert.IsType<ResyncEntry>(row.Entry);
-        Assert.False(row.Dimmed);
+        Assert.IsType<ResyncRow>(Assert.Single(list.Rows));
         Assert.Equal(2, list.ActionCount);
-        Assert.Equal(0, list.ActionRowCount); // so the pane still says "No Actions match"
+        Assert.Equal(0, list.VisibleActionCount); // so the pane still says "No Actions match"
     }
 
     [Fact]
     public void Resyncs_do_not_count_as_Actions()
     {
-        list.Update(Session(Resync(40, lost: 12)), null);
+        list.Update(Session(Resync(40, lost: 12, id: 1)), null);
 
         Assert.Equal(0, list.ActionCount);
-        Assert.IsType<ResyncEntry>(Assert.Single(list.Rows).Entry);
+        Assert.IsType<ResyncRow>(Assert.Single(list.Rows));
     }
 
     [Fact]
-    public void A_Resync_and_an_Action_at_the_same_Sequence_are_selected_separately()
+    public void Entries_sharing_a_Sequence_are_selected_separately()
     {
-        list.Update(Session(Action(3), Resync(3, lost: null), Action(4)), null);
+        // After an older Snapshot, Actions 2 and 3 arrive again.
+        list.Update(Session(Action(1), Action(2), Action(3), Resync(1, lost: null, id: 4), Action(2, id: 5), Action(3, id: 6)), null);
 
-        list.SelectResync(3);
+        list.Select(4);
         Assert.IsType<ResyncEntry>(list.Selected);
 
-        list.Select(3);
-        Assert.IsType<ActionEntry>(list.Selected);
-        Assert.Equal(3, list.Selected.Sequence);
+        list.Select(5);
+        Assert.Equal((5, 2), (list.Selected!.Id, list.Selected.Sequence));
+
+        list.Select(2);
+        Assert.Equal((2, 2), (list.Selected!.Id, list.Selected.Sequence));
     }
 
     [Fact]
     public void A_selected_Resync_stays_selected_as_the_History_is_re_read()
     {
         var id = Guid.NewGuid();
-        list.Update(Session(id, Action(1), Resync(5), Action(6)), null);
-        list.SelectResync(5);
+        list.Update(Session(id, Action(1), Resync(5, id: 2), Action(6, id: 3)), null);
+        list.Select(2);
 
-        list.Update(Session(id, Action(1), Resync(5), Action(6), Action(7)), null);
+        list.Update(Session(id, Action(1), Resync(5, id: 2), Action(6, id: 3), Action(7, id: 4)), null);
 
         Assert.IsType<ResyncEntry>(list.Selected);
         Assert.False(list.Following);
@@ -297,7 +299,7 @@ public class ActionListTests
     [Fact]
     public void Follow_mode_selects_a_Resync_that_is_newest()
     {
-        list.Update(Session(Action(1), Resync(5)), null);
+        list.Update(Session(Action(1), Resync(5, id: 2)), null);
 
         Assert.True(list.Following);
         Assert.IsType<ResyncEntry>(list.Selected);
@@ -310,7 +312,19 @@ public class ActionListTests
         list.Update(Session(id, Action(1), Action(2)), null);
         list.Select(1);
 
-        list.Update(Session(id, Action(1), Action(2), Resync(5), Action(6)), null);
+        list.Update(Session(id, Action(1), Action(2), Resync(5, id: 3), Action(6, id: 4)), null);
+
+        Assert.Equal(2, list.NewCount);
+    }
+
+    [Fact]
+    public void While_paused_what_follows_an_older_Snapshot_is_counted_though_its_Sequences_are_lower()
+    {
+        var id = Guid.NewGuid();
+        list.Update(Session(id, Action(1), Action(2), Action(3)), null);
+        list.Select(1);
+
+        list.Update(Session(id, Action(1), Action(2), Action(3), Resync(1, lost: null, id: 4), Action(2, id: 5)), null);
 
         Assert.Equal(2, list.NewCount);
     }

@@ -11,7 +11,7 @@ namespace FluxorViewer.Server.Sessions;
 /// One lock guards everything: hub calls from many Sessions, closes and Clears are serialised, and readers get copies.
 /// <see cref="Changed"/> is raised after the lock is released.
 /// </remarks>
-public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvider? time = null) : ISessionRegistry
+public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvider time) : ISessionRegistry
 {
     private readonly Lock gate = new();
     private readonly Dictionary<Guid, Entry> sessions = [];
@@ -31,18 +31,22 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
         lock (gate)
         {
             long? lost;
+            // The lost Actions end at the Snapshot; they can't start before the first one this Viewer didn't receive.
+            long firstUnreceived;
             if (!sessions.TryGetValue(snapshot.SessionId, out var session))
             {
                 sessions[snapshot.SessionId] = session = new Entry(snapshot, ++seen);
                 changes.Add(new SessionAdded(snapshot.SessionId));
                 // Actions before a new Session's first Snapshot predate this Viewer; only the dropped ones were lost.
                 lost = snapshot.DroppedCount;
+                firstUnreceived = 1;
             }
             else
             {
                 if (session.ConnectionId is null)
                     changes.Add(new SessionStatusChanged(snapshot.SessionId, SessionStatus.Connected));
                 lost = Math.Max(snapshot.DroppedCount, snapshot.LastSequence - session.LastSequence);
+                firstUnreceived = session.LastSequence + 1;
                 if (snapshot.LastSequence < session.LastSequence)
                 {
                     // The middleware never sends one (ADR 0005); if it does, take it without rewinding the History.
@@ -59,7 +63,14 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
 
             if (lost is null or > 0)
             {
-                session.History.Add(new ResyncEntry(snapshot.LastSequence, (time ?? TimeProvider.System).GetLocalNow(), lost, FeatureMap.From(snapshot.Features)));
+                long? firstLost = lost is { } n ? Math.Max(firstUnreceived, snapshot.LastSequence - n + 1) : null;
+                session.History.Add(new ResyncEntry(
+                    session.NextId(),
+                    snapshot.LastSequence,
+                    time.GetLocalNow(),
+                    lost,
+                    firstLost <= snapshot.LastSequence ? firstLost : null,
+                    FeatureMap.From(snapshot.Features)));
                 changes.Add(new EntriesAppended(snapshot.SessionId, 1));
             }
 
@@ -171,6 +182,11 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
         public string? ConnectionId { get; set; }
         public bool WarnedOlderSnapshot { get; set; }
 
+        private long lastId;
+
+        /// <summary>The Id for the next entry appended to the History; never reused, even after Clear.</summary>
+        public long NextId() => ++lastId;
+
         /// <summary>
         /// Appends the Action with the state before it and after it; only its Changed Features are new. An Action at or
         /// before the last received Sequence is a duplicate and ignored.
@@ -182,6 +198,7 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
             var before = Current;
             var after = before.SetItems(action.ChangedFeatures.Select(f => KeyValuePair.Create(f.Name, f)));
             History.Add(new ActionEntry(
+                NextId(),
                 action.Sequence,
                 action.Timestamp,
                 action.ActionType,
@@ -215,31 +232,43 @@ public enum SessionStatus
 }
 
 /// <summary>One point in a Session's History, with the Feature states after it.</summary>
-/// <param name="Sequence">Where it sits in the History; an Action and a Resync may share one.</param>
-public abstract record HistoryEntry(long Sequence, ImmutableDictionary<string, FeatureState> After);
+/// <param name="Id">
+/// Identifies the entry within its Session, increasing in the order entries were appended and never reused. Unlike the
+/// Sequence, it's unique: a Resync shares its Sequence with the Action before it, and after an older Snapshot the
+/// History may hold Actions with the same Sequence twice.
+/// </param>
+/// <param name="Sequence">The Action's Sequence, or the Snapshot's <c>LastSequence</c> for a Resync.</param>
+public abstract record HistoryEntry(long Id, long Sequence, ImmutableDictionary<string, FeatureState> After);
 
 /// <summary>An Action in the History.</summary>
 /// <param name="ChangedFeatures">Names of the Features whose state this Action replaced.</param>
 /// <param name="Before">Feature states before this Action. Unchanged Features share their instances with <paramref name="After"/>.</param>
 public sealed record ActionEntry(
+    long Id,
     long Sequence,
     DateTimeOffset Timestamp,
     string ActionType,
     string ActionJson,
     IReadOnlySet<string> ChangedFeatures,
     ImmutableDictionary<string, FeatureState> Before,
-    ImmutableDictionary<string, FeatureState> After) : HistoryEntry(Sequence, After);
+    ImmutableDictionary<string, FeatureState> After) : HistoryEntry(Id, Sequence, After);
 
 /// <summary>A Snapshot that didn't follow on from what the Viewer already had.</summary>
 /// <param name="Sequence">The Snapshot's <c>LastSequence</c>: the Resync sits just after the last Action it covers.</param>
 /// <param name="ReceivedAt">When the Viewer received the Snapshot.</param>
 /// <param name="Lost">How many Actions the Viewer missed before it; null when the Snapshot was older than what the Viewer had.</param>
+/// <param name="FirstLost">
+/// The Sequence of the first lost Action, the rest running up to <paramref name="Sequence"/>; null when the Viewer can't
+/// tell which were lost.
+/// </param>
 /// <param name="After">The Snapshot's Feature states.</param>
 public sealed record ResyncEntry(
+    long Id,
     long Sequence,
     DateTimeOffset ReceivedAt,
     long? Lost,
-    ImmutableDictionary<string, FeatureState> After) : HistoryEntry(Sequence, After);
+    long? FirstLost,
+    ImmutableDictionary<string, FeatureState> After) : HistoryEntry(Id, Sequence, After);
 
 /// <summary>A Session as received so far.</summary>
 /// <param name="ConnectionId">The hub connection currently reporting it, or null once that closed.</param>

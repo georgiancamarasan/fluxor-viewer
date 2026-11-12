@@ -2,18 +2,57 @@ using FluxorViewer.Server.Sessions;
 
 namespace FluxorViewer.Server.Components;
 
-/// <summary>One row of the Action list: an Action or a Resync.</summary>
-/// <param name="ShortName">The Action type's short name; null for a Resync.</param>
-/// <param name="Dimmed">The Action didn't change the selected Feature; never true for a Resync.</param>
-public sealed record ActionRow(HistoryEntry Entry, string? ShortName, bool Dimmed);
+/// <summary>One row of the Action list: an <see cref="ActionRow"/> or a <see cref="ResyncRow"/>.</summary>
+public abstract record ListRow
+{
+    private protected ListRow() { }
+
+    public abstract HistoryEntry Entry { get; }
+
+    /// <summary>The time the row shows: when the Action was dispatched, or when the Viewer received the Resync.</summary>
+    public abstract DateTimeOffset At { get; }
+}
+
+/// <summary>An Action's row.</summary>
+/// <param name="Dimmed">The Action didn't change the selected Feature.</param>
+public sealed record ActionRow(ActionEntry Action, string ShortName, bool Dimmed) : ListRow
+{
+    public override HistoryEntry Entry => Action;
+
+    public override DateTimeOffset At => Action.Timestamp;
+}
+
+/// <summary>A Resync's row; the filter and "changed only" never hide it.</summary>
+public sealed record ResyncRow(ResyncEntry Resync) : ListRow
+{
+    public override HistoryEntry Entry => Resync;
+
+    public override DateTimeOffset At => Resync.ReceivedAt;
+
+    /// <summary>"⚠ resync — N actions lost", or just "⚠ resync" when the Snapshot was older than what the Viewer had.</summary>
+    public string Label => Resync.Lost switch
+    {
+        null => "⚠ resync",
+        1 => "⚠ resync — 1 action lost",
+        var lost => $"⚠ resync — {lost} actions lost",
+    };
+
+    /// <summary>Which Actions were lost, for the row's hover; null when the Viewer can't tell.</summary>
+    public string? LostRange => Resync.FirstLost switch
+    {
+        null => null,
+        var first when first == Resync.Sequence => $"Action #{first} was lost",
+        var first => $"Actions #{first}–#{Resync.Sequence} were lost",
+    };
+}
 
 /// <summary>
 /// The rows one Viewer tab's Action list shows, which row it has selected, and follow mode.
 /// </summary>
 /// <remarks>
 /// The filter and the "changed only" toggle belong to the tab and survive switching Session; they hide Actions only,
-/// never Resyncs. The selection is by kind and Sequence (an Action and a Resync may share one) and kept while its row
-/// is hidden. While following, it's the newest visible row; selecting any other row pauses follow mode, and losing the
+/// never Resyncs. The selection is by entry Id (a Sequence may appear more than once) and kept while its row is
+/// hidden. While following, it's the newest visible row; selecting any other row pauses follow mode, and losing the
 /// selection (switching Session, the entry leaving the History) resumes it.
 /// </remarks>
 public sealed class ActionList
@@ -32,10 +71,10 @@ public sealed class ActionList
     /// <summary>Every Action in the selected Session, shown or not. Resyncs don't count.</summary>
     public int ActionCount { get; private set; }
 
-    /// <summary>The visible Action rows; 0 means no Action matches, though Resync rows may still show.</summary>
-    public int ActionRowCount { get; private set; }
+    /// <summary>The Actions the filter and toggle leave visible; 0 means none match, though Resync rows may still show.</summary>
+    public int VisibleActionCount { get; private set; }
 
-    public ActionRow[] Rows { get; private set; } = [];
+    public ListRow[] Rows { get; private set; } = [];
 
     public HistoryEntry? Selected { get; private set; }
 
@@ -45,25 +84,20 @@ public sealed class ActionList
     /// <summary>Visible rows that arrived since follow mode paused; 0 while following.</summary>
     public int NewCount { get; private set; }
 
-    // The newest Sequence in the History when follow mode paused.
+    // The newest entry Id in the History when follow mode paused.
     private long pausedAt;
 
     /// <summary>
-    /// The developer clicked an Action row. The newest visible row turns follow mode on, any other pauses it. Sequences
-    /// no longer in the History are ignored.
+    /// The developer clicked the row of the entry with this Id. The newest visible row turns follow mode on, any other
+    /// pauses it. Ids no longer in the History are ignored.
     /// </summary>
-    public void Select(long sequence) => Select(Find<ActionEntry>(sequence));
-
-    /// <summary>The developer clicked a Resync row; otherwise as <see cref="Select(long)"/>.</summary>
-    public void SelectResync(long sequence) => Select(Find<ResyncEntry>(sequence));
-
-    private void Select(HistoryEntry? entry)
+    public void Select(long id)
     {
-        if (entry is null)
+        if (Find(id) is not { } entry)
             return;
         Selected = entry;
-        Following = Rows is [.., var newest] && ReferenceEquals(newest.Entry, entry);
-        pausedAt = entries[^1].Sequence;
+        Following = Rows is [.., var newest] && newest.Entry.Id == id;
+        pausedAt = entries[^1].Id;
         Refilter();
     }
 
@@ -93,12 +127,7 @@ public sealed class ActionList
         feature = selectedFeature;
 
         // Re-point the selection at the latest copy of its entry, or drop it if Clear or the cap removed it.
-        Selected = Selected switch
-        {
-            ActionEntry a => Find<ActionEntry>(a.Sequence),
-            ResyncEntry r => Find<ResyncEntry>(r.Sequence),
-            _ => null,
-        };
+        Selected = Selected is { } selected ? Find(selected.Id) : null;
         if (Selected is null)
             Following = true;
         Refilter();
@@ -109,14 +138,15 @@ public sealed class ActionList
     {
         var filter = Filter.Trim();
         var changedOnly = ChangedOnly && feature is not null;
-        var rows = new List<ActionRow>(entries.Count);
+        var rows = new List<ListRow>(entries.Count);
         foreach (var entry in entries)
         {
-            if (entry is not ActionEntry action)
+            if (entry is ResyncEntry resync)
             {
-                rows.Add(new ActionRow(entry, null, false));
+                rows.Add(new ResyncRow(resync));
                 continue;
             }
+            var action = (ActionEntry)entry;
             var dimmed = feature is not null && !action.ChangedFeatures.Contains(feature);
             if (dimmed && changedOnly)
                 continue;
@@ -126,14 +156,13 @@ public sealed class ActionList
             rows.Add(new ActionRow(action, name, dimmed));
         }
         Rows = [.. rows];
-        ActionRowCount = rows.Count(r => r.Entry is ActionEntry);
+        VisibleActionCount = rows.Count(r => r is ActionRow);
         if (Following)
             Selected = Rows is [.., var newest] ? newest.Entry : null;
-        NewCount = Following ? 0 : Rows.Count(r => r.Entry.Sequence > pausedAt);
+        NewCount = Following ? 0 : Rows.Count(r => r.Entry.Id > pausedAt);
     }
 
-    private T? Find<T>(long sequence) where T : HistoryEntry =>
-        entries.OfType<T>().FirstOrDefault(e => e.Sequence == sequence);
+    private HistoryEntry? Find(long id) => entries.FirstOrDefault(e => e.Id == id);
 
     private string ShortName(string actionType)
     {

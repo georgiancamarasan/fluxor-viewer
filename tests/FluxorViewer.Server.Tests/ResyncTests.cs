@@ -37,7 +37,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
     private ReceivedSession Session(Guid sessionId) => viewer.Registry.Find(sessionId)!;
 
     [Fact]
-    public async Task A_reconnect_after_missing_Actions_marks_a_Resync_with_the_Sequence_gap()
+    public async Task A_Snapshot_after_missed_Actions_marks_a_Resync_for_the_Sequences_missed()
     {
         var sessionId = Guid.NewGuid();
         await using (var first = await SnapshotAsync(NewSnapshot(sessionId)))
@@ -52,7 +52,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
     }
 
     [Fact]
-    public async Task A_reconnect_that_missed_nothing_marks_no_Resync()
+    public async Task A_Snapshot_that_follows_on_from_the_last_Action_marks_no_Resync()
     {
         var sessionId = Guid.NewGuid();
         await using (var first = await SnapshotAsync(NewSnapshot(sessionId)))
@@ -64,7 +64,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
     }
 
     [Fact]
-    public async Task Dropped_Actions_count_as_lost_even_when_the_Sequence_gap_is_smaller()
+    public async Task Dropped_Actions_count_as_lost_even_when_fewer_Sequences_were_missed()
     {
         var sessionId = Guid.NewGuid();
         await using var connection = await SnapshotAsync(NewSnapshot(sessionId));
@@ -141,6 +141,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
 
         Assert.Single(viewer.Logs, l =>
             l.Level == LogLevel.Warning && l.Category == typeof(SessionRegistry).FullName && l.Message.Contains(sessionId.ToString()));
+        Assert.Equal([1, 2, 3, 4, 5], Session(sessionId).Actions.Select(a => a.Sequence)); // nothing rewound
     }
 
     [Fact]

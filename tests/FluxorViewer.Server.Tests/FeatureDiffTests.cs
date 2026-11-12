@@ -14,7 +14,7 @@ public class FeatureDiffTests
 
     private static ActionEntry Action(
         ImmutableDictionary<string, FeatureState> before, ImmutableDictionary<string, FeatureState> after, params string[] changed) =>
-        new(1, DateTimeOffset.UtcNow, "App.Act", "{}", changed.ToFrozenSet(), before, after);
+        new(1, 1, DateTimeOffset.UtcNow, "App.Act", "{}", changed.ToFrozenSet(), before, after);
 
     [Fact]
     public void Without_an_Action_there_is_nothing_to_diff() =>
