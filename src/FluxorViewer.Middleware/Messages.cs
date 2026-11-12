@@ -6,7 +6,8 @@ namespace FluxorViewer.Middleware;
 /// <summary>Turns tracked Feature states and pending Actions into protocol messages.</summary>
 internal static class Messages
 {
-    public static Snapshot Snapshot(SessionInfo session, long lastSequence, long droppedCount, IEnumerable<TrackedState> features) => new(
+    public static Snapshot Snapshot(
+        SessionInfo session, long lastSequence, long droppedCount, IEnumerable<TrackedState> features, ViewerJson json) => new(
         ProtocolVersion.Current,
         session.SessionId,
         session.AppName,
@@ -14,20 +15,20 @@ internal static class Messages
         session.StartedAt,
         lastSequence,
         droppedCount,
-        features.Select(FeatureState).ToList());
+        features.Select(f => FeatureState(f, json)).ToList());
 
-    public static ActionRecorded ActionRecorded(SessionInfo session, PendingAction pending) => new(
+    public static ActionRecorded ActionRecorded(SessionInfo session, PendingAction pending, ViewerJson json) => new(
         session.SessionId,
         pending.Sequence,
         pending.Timestamp,
         TypeNames.Readable(pending.Action.GetType()),
-        ViewerJson.Serialize(pending.Action, pending.Action.GetType()),
-        pending.ChangedFeatures.Select(FeatureState).ToList());
+        json.Payload(pending.Action),
+        pending.ChangedFeatures.Select(f => FeatureState(f, json)).ToList());
 
-    private static FeatureState FeatureState(TrackedState tracked) => new(
+    private static FeatureState FeatureState(TrackedState tracked, ViewerJson json) => new(
         tracked.Feature.GetName(),
         TypeNames.Readable(tracked.Feature.GetStateType()),
-        ViewerJson.Serialize(tracked.State, tracked.Feature.GetStateType()));
+        json.FeatureState(tracked.Feature.GetName(), tracked.State, tracked.Feature.GetStateType()));
 }
 
 /// <summary>Identity of a Session, fixed when its store initialises.</summary>

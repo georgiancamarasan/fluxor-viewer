@@ -143,22 +143,6 @@ public class ActionRecordingTests
     }
 
     [Fact]
-    public async Task An_Action_that_fails_to_serialise_is_logged_and_skipped()
-    {
-        await using var harness = new Harness();
-        var (connection, _) = await harness.StartConnected();
-
-        harness.Dispatcher.Dispatch(new ExplodingAction());
-        harness.Dispatcher.Dispatch(new IncrementAction());
-
-        var action = Assert.Single(await Harness.ActionsSent(connection, 1));
-        Assert.Equal(typeof(IncrementAction).FullName, action.ActionType);
-        Assert.Equal(3, action.Sequence); // 2 was skipped, leaving an honest gap.
-        var warning = Assert.Single(harness.Logs.Entries, e => e.Level == LogLevel.Warning);
-        Assert.IsType<InvalidOperationException>(warning.Exception);
-    }
-
-    [Fact]
     public async Task After_a_failed_send_the_Session_stops_reporting()
     {
         await using var harness = new Harness();

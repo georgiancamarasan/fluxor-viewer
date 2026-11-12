@@ -16,6 +16,7 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
     internal const int MaxBatchSize = 100;
 
     private readonly CancellationTokenSource stopping = new();
+    private readonly ViewerJson json = new(options.MaxDepth, logger);
 
     // Full means "the Viewer can't keep up": AfterDispatch then stops queueing rather than waiting (see Record).
     private readonly Channel<PendingAction> queue = Channel.CreateBounded<PendingAction>(
@@ -154,7 +155,7 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
         }
     }
 
-    /// <summary>Captures and sends a Snapshot; false if it couldn't be serialised (the Session then stops).</summary>
+    /// <summary>Captures and sends a Snapshot; false if it couldn't be built (the Session then stops).</summary>
     private async Task<bool> TrySendSnapshotAsync(IViewerConnection connection, SessionInfo session, CancellationToken cancellationToken)
     {
         Snapshot snapshot;
@@ -165,7 +166,7 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
         catch (Exception ex)
         {
             Disconnect();
-            logger.LogWarning(ex, "FluxorViewer: could not serialise the Snapshot for Session {SessionId}.", session.SessionId);
+            logger.LogWarning(ex, "FluxorViewer: could not build the Snapshot for Session {SessionId}.", session.SessionId);
             return false;
         }
 
@@ -191,7 +192,7 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
             queueing = true;
         }
 
-        return Messages.Snapshot(session, sequence, dropped, tracked);
+        return Messages.Snapshot(session, sequence, dropped, tracked, json);
     }
 
     private bool IsOverflowed()
@@ -204,12 +205,12 @@ internal sealed class SessionReporter(FluxorViewerOptions options, IViewerConnec
     {
         try
         {
-            return Messages.ActionRecorded(session, pending);
+            return Messages.ActionRecorded(session, pending, json);
         }
         catch (Exception ex)
         {
-            // MW-4 replaces this with a {"$error": …} placeholder.
-            logger.LogWarning(ex, "FluxorViewer: could not serialise Action {Sequence} ({ActionType}); skipped.",
+            // A value that won't serialise is already a Serialisation error; this is anything else, e.g. a Feature's name.
+            logger.LogWarning(ex, "FluxorViewer: could not build Action {Sequence} ({ActionType}); skipped.",
                 pending.Sequence, pending.Action.GetType());
             return null;
         }

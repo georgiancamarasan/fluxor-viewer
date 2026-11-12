@@ -56,6 +56,7 @@ public class UseFluxorViewerTests
         Assert.Equal("http://localhost:5299", options.ServerUrl);
         Assert.Equal(System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name ?? "Unknown", options.AppName);
         Assert.Equal(1000, options.BufferSize);
+        Assert.Equal(64, options.MaxDepth);
         Assert.False(options.Enabled);
         Assert.Empty(options.IgnoredActionPredicates);
     }
@@ -117,6 +118,24 @@ public class UseFluxorViewerTests
         Assert.Contains("at least 1", ex.Message);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1025)]
+    public void Max_depth_outside_1_to_1024_fails_fast(int maxDepth)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Services(o => o.UseFluxorViewer(v => { v.Enabled = true; v.MaxDepth = maxDepth; })));
+
+        Assert.Equal("MaxDepth", ex.ParamName);
+        Assert.Contains("between 1 and 1024", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(1024)]
+    public void Max_depth_from_1_to_1024_is_accepted(int maxDepth) =>
+        Services(o => o.UseFluxorViewer(v => { v.Enabled = true; v.MaxDepth = maxDepth; }));
+
     [Fact]
     public void All_problems_are_reported_together()
     {
@@ -127,11 +146,13 @@ public class UseFluxorViewerTests
                 v.ServerUrl = "nope";
                 v.AppName = "";
                 v.BufferSize = 0;
+                v.MaxDepth = 0;
             })));
 
         Assert.Contains("ServerUrl", ex.Message);
         Assert.Contains("AppName", ex.Message);
         Assert.Contains("BufferSize", ex.Message);
+        Assert.Contains("MaxDepth", ex.Message);
     }
 
     [Fact]

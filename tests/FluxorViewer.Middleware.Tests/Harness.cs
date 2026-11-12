@@ -10,16 +10,22 @@ internal sealed class Harness : IAsyncDisposable
 {
     private readonly ServiceProvider provider;
 
-    public Harness(bool connectImmediately = false, int bufferSize = 1000, bool enabled = true, FakeViewer? viewer = null)
+    public Harness(bool connectImmediately = false, int bufferSize = 1000, bool enabled = true, FakeViewer? viewer = null,
+        Type[]? types = null, Action<FluxorViewerOptions>? configure = null)
     {
         Viewer = viewer ?? new FakeViewer(connectImmediately);
         var services = new ServiceCollection();
         services.AddSingleton<IViewerConnectionFactory>(Viewer);
         services.AddSingleton<ILoggerFactory>(Logs);
         services.AddFluxor(o => o
-            .ScanTypes(typeof(CounterFeature), typeof(CounterReducers), typeof(ProfileFeature), typeof(ProfileReducers),
-                typeof(GoEffects), typeof(FlakyFeature))
-            .UseFluxorViewer(v => { v.Enabled = enabled; v.BufferSize = bufferSize; }));
+            .ScanTypes(typeof(CounterFeature), [typeof(CounterReducers), typeof(ProfileFeature), typeof(ProfileReducers),
+                typeof(GoEffects), typeof(FlakyFeature), .. types ?? []])
+            .UseFluxorViewer(v =>
+            {
+                v.Enabled = enabled;
+                v.BufferSize = bufferSize;
+                configure?.Invoke(v);
+            }));
         provider = services.BuildServiceProvider();
     }
 

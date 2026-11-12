@@ -94,7 +94,7 @@ public class SendingTests
     }
 
     [Fact]
-    public async Task An_Action_that_fails_to_serialise_is_skipped_within_its_batch()
+    public async Task An_Action_that_fails_to_serialise_stays_in_its_batch()
     {
         await using var harness = new Harness();
         var (connection, _) = await harness.StartConnected();
@@ -105,10 +105,10 @@ public class SendingTests
         harness.Dispatcher.Dispatch(new ExplodingAction());
         harness.Dispatcher.Dispatch(new IncrementAction());
         gate.SetResult();
-        await Wait.Until(() => harness.Logs.Entries.Any(e => e.Level == LogLevel.Warning));
-        var actions = await Harness.ActionsSent(connection, 3);
+        var actions = await Harness.ActionsSent(connection, 4);
 
-        Assert.Equal([2L, 3L, 5L], actions.Select(a => a.Sequence));
+        Assert.Equal([2L, 3L, 4L, 5L], actions.Select(a => a.Sequence));
+        Assert.Contains("$error", actions[2].ActionJson);
     }
 
     [Fact]

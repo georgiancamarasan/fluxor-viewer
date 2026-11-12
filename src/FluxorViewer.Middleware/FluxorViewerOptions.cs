@@ -1,4 +1,5 @@
 using System.Reflection;
+using FluxorViewer.Protocol;
 
 namespace FluxorViewer.Middleware;
 
@@ -18,6 +19,12 @@ public sealed class FluxorViewerOptions
     /// Must be at least 1.
     /// </summary>
     public int BufferSize { get; set; } = 1000;
+
+    /// <summary>
+    /// How deeply a Payload or Feature state may nest; anything deeper is sent as a Serialisation error. Must be from
+    /// 1 to 1024, the most the Viewer reads.
+    /// </summary>
+    public int MaxDepth { get; set; } = 64;
 
     /// <summary>
     /// When false (the default) nothing is registered: no connection is made and nothing is serialised.
@@ -48,12 +55,17 @@ public sealed class FluxorViewerOptions
         if (BufferSize < 1)
             problems.Add((nameof(BufferSize), $"BufferSize must be at least 1, but was {BufferSize}."));
 
+        if (MaxDepth is < 1 or > JsonLimits.MaxDepth)
+            problems.Add((nameof(MaxDepth), $"MaxDepth must be between 1 and {JsonLimits.MaxDepth}, but was {MaxDepth}."));
+
         switch (problems)
         {
             case []:
                 return;
             case [(nameof(BufferSize), var message)]:
                 throw new ArgumentOutOfRangeException(nameof(BufferSize), BufferSize, $"FluxorViewer: {message}");
+            case [(nameof(MaxDepth), var message)]:
+                throw new ArgumentOutOfRangeException(nameof(MaxDepth), MaxDepth, $"FluxorViewer: {message}");
             case [var (option, message)]:
                 throw new ArgumentException($"FluxorViewer: {message}", option);
             default:

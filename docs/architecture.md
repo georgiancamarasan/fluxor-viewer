@@ -29,7 +29,7 @@ Data flows one way: middleware → Viewer. The Viewer never sends commands to th
 
 | Project | Kind | Responsibility |
 |---|---|---|
-| `src/FluxorViewer.Protocol` | NuGet (`net10.0`) | Message contracts and protocol version. Shared by both sides so they can't drift. |
+| `src/FluxorViewer.Protocol` | NuGet (`net10.0`) | Message contracts, protocol version and JSON limits (`JsonLimits.MaxDepth`). Shared by both sides so they can't drift. |
 | `src/FluxorViewer.Middleware` | NuGet (`net10.0`, Fluxor 6.x) | Fluxor `IMiddleware` that observes the store and reports to the Viewer. |
 | `src/FluxorViewer.Server` | `dotnet tool` (`fluxor-viewer`) | ASP.NET Core app: ingest hub, in-memory Session history, Blazor Server UI. |
 | `samples/AutoSample` | Sample | InteractiveAuto app (Server + `.Client`) with a few Features, used for manual testing. |

@@ -506,6 +506,49 @@ public class HomePageTests : BunitContext
         Assert.Equal(["\"not really\"", "1"], Values(page));
     }
 
+    /// <summary>An object nested <paramref name="depth"/> levels deep: <c>{"n":{"n":…0…}}</c>.</summary>
+    private static string Deep(int depth) => string.Concat(Enumerable.Repeat("""{"n":""", depth)) + "0" + new string('}', depth);
+
+    // MW-4: the middleware may send up to 1024 levels (MaxDepth), past JsonDocument's default of 64.
+    [Fact]
+    public void A_state_nested_up_to_1024_levels_shows_as_a_tree()
+    {
+        registry.SnapshotReceived("c1", new Snapshot(ProtocolVersion.Current, Id("aaaa"), "MyApp", Runtime.Server, DateTimeOffset.UtcNow, 0, 0,
+            [new FeatureState("Deep", "App.DeepState", Deep(1024))]));
+
+        var page = Render<Home>();
+
+        Assert.NotNull(page.Find("[data-test=state] [data-test=json-tree]"));
+        Assert.Empty(page.FindAll("[data-test=state] [data-test=unreadable]"));
+    }
+
+    [Fact]
+    public void A_deep_Payload_can_be_expanded_into_a_tree()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        DispatchPayload(Id("aaaa"), 1, "App.Deep", Deep(100));
+        var page = Render<Home>();
+
+        TogglePayload(page);
+
+        Assert.NotNull(page.Find("[data-test=payload-tree] [data-test=json-tree]"));
+    }
+
+    [Fact]
+    public void A_state_the_Viewer_cant_read_says_so_instead_of_breaking_the_page()
+    {
+        registry.SnapshotReceived("c1", new Snapshot(ProtocolVersion.Current, Id("aaaa"), "MyApp", Runtime.Server, DateTimeOffset.UtcNow, 0, 0,
+            [new FeatureState("Deep", "App.DeepState", Deep(1025)), new FeatureState("Torn", "App.TornState", """{"a":""")]));
+        var page = Render<Home>();
+
+        page.Find("[data-test=feature-picker] select").Change("Deep");
+        Assert.StartsWith("Couldn't read this state: The maximum configured depth of 1024", page.Find("[data-test=state] [data-test=unreadable]").TextContent.Trim());
+
+        page.Find("[data-test=feature-picker] select").Change("Torn");
+        Assert.StartsWith("Couldn't read this state: ", page.Find("[data-test=state] [data-test=unreadable]").TextContent.Trim());
+        Assert.Empty(page.FindAll("[data-test=json-tree]"));
+    }
+
     private static Snapshot Nested(Guid sessionId, string appName, params string[] features) => new(
         ProtocolVersion.Current, sessionId, appName, Runtime.Server, DateTimeOffset.UtcNow, 0, 0,
         [.. features.Select(f => new FeatureState(f, $"App.{f}State", """{"a":{"b":{"c":1}}}"""))]);

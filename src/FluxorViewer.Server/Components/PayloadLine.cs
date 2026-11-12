@@ -21,7 +21,7 @@ public sealed record PayloadLine(string Text, bool CanExpand)
     {
         try
         {
-            using var document = JsonDocument.Parse(json);
+            using var document = ReceivedJson.Parse(json);
             var root = document.RootElement;
             var canExpand = root.ValueKind switch
             {

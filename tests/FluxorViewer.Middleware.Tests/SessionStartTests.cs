@@ -171,21 +171,6 @@ public class SessionStartTests
     }
 
     [Fact]
-    public async Task A_Snapshot_that_fails_to_serialise_is_logged_and_not_sent()
-    {
-        var logs = new CapturingLoggerFactory();
-        var viewer = new FakeViewer();
-        await using var provider = Provider(viewer, logs, typeof(ExplodingFeature));
-        await StartStore(provider);
-        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Ct);
-
-        await Wait.Until(() => logs.Entries.Any(e => e.Level == LogLevel.Warning));
-
-        Assert.Empty(connection.Sent);
-        Assert.IsType<InvalidOperationException>(logs.Entries.Single(e => e.Level == LogLevel.Warning).Exception);
-    }
-
-    [Fact]
     public async Task Disposing_the_store_cancels_a_pending_connect_and_closes_the_connection()
     {
         var viewer = new FakeViewer(connectImmediately: false);
@@ -258,15 +243,4 @@ public class ProfileFeature : Feature<ProfileState>
 {
     public override string GetName() => "Profile";
     protected override ProfileState GetInitialState() => new("Ada");
-}
-
-public class ExplodingState
-{
-    public int Value => throw new InvalidOperationException("Boom");
-}
-
-public class ExplodingFeature : Feature<ExplodingState>
-{
-    public override string GetName() => "Exploding";
-    protected override ExplodingState GetInitialState() => new();
 }

@@ -1,35 +1,58 @@
 @using System.Text.Json
 @implements IDisposable
 
-<div class="json-tree" data-test="json-tree">
-    @if (document is not null)
-    {
-        var root = document.RootElement;
-        if (root.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+@if (unreadable is not null)
+{
+    <p class="state-error" data-test="unreadable">Couldn't read this @Subject: @unreadable</p>
+}
+else
+{
+    <div class="json-tree" data-test="json-tree">
+        @if (document is not null)
         {
-            @Children(root, "$", 0)
+            var root = document.RootElement;
+            if (root.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+            {
+                @Children(root, "$", 0)
+            }
+            else
+            {
+                @Value(root)
+            }
         }
-        else
-        {
-            @Value(root)
-        }
-    }
-</div>
+    </div>
+}
 
 @code {
     /// <summary>The JSON to show, left as received.</summary>
     [Parameter, EditorRequired] public string Json { get; set; } = "";
 
+    /// <summary>What the JSON is, for the message when it can't be read: "state" or "Payload".</summary>
+    [Parameter] public string Subject { get; set; } = "state";
+
     private string? parsed;
     private JsonDocument? document;
+
+    // Why the JSON couldn't be read (too deep, or malformed from a client other than the middleware). Shown instead of
+    // throwing: an exception while rendering would end the developer's circuit.
+    private string? unreadable;
 
     protected override void OnParametersSet()
     {
         if (Json == parsed)
             return;
         document?.Dispose();
-        document = JsonDocument.Parse(Json);
+        document = null;
+        unreadable = null;
         parsed = Json;
+        try
+        {
+            document = ReceivedJson.Parse(Json);
+        }
+        catch (JsonException ex)
+        {
+            unreadable = ex.Message;
+        }
     }
 
     /// <summary>
