@@ -78,7 +78,7 @@
     private CollocatedModule module = default!;
 
     // What the browser last diffed; it diffs again only when one of these changes, not on every render.
-    private (ActionEntry? Action, string? Feature, bool ShowUnchanged) rendered;
+    private DiffRequest rendered;
 
     // Whether the browser found a difference in the JSON last diffed; it can't when numbers differ only beyond 2^53.
     private bool hasDifference = true;
@@ -106,13 +106,13 @@
     {
         if (diff is not FeatureDiff.Changes changes)
             return;
-        var requested = (Action, Feature, ShowUnchanged);
-        if (Same(rendered, requested))
+        var requested = new DiffRequest(Action, Feature, ShowUnchanged);
+        if (rendered.IsSameAs(requested))
             return;
         rendered = requested;
         var (found, failure) = await DiffInBrowserAsync(changes);
         // Follow mode may have moved on while the browser was diffing; that later diff decides.
-        if (Same(rendered, requested) && (found != hasDifference || failure != unreadable))
+        if (rendered.IsSameAs(requested) && (found != hasDifference || failure != unreadable))
         {
             (hasDifference, unreadable) = (found, failure);
             StateHasChanged();
@@ -135,9 +135,13 @@
         }
     }
 
-    // By reference: an ActionEntry is a record, and comparing its JSON by value would cost as much as a diff.
-    private static bool Same((ActionEntry? Action, string? Feature, bool ShowUnchanged) a, (ActionEntry? Action, string? Feature, bool ShowUnchanged) b) =>
-        ReferenceEquals(a.Action, b.Action) && a.Feature == b.Feature && a.ShowUnchanged == b.ShowUnchanged;
+    /// <summary>What the browser is asked to diff.</summary>
+    private readonly record struct DiffRequest(ActionEntry? Action, string? Feature, bool ShowUnchanged)
+    {
+        // By reference: an ActionEntry is a record, and comparing its JSON by value would cost as much as a diff.
+        public bool IsSameAs(DiffRequest other) =>
+            ReferenceEquals(Action, other.Action) && Feature == other.Feature && ShowUnchanged == other.ShowUnchanged;
+    }
 
     private Task OnShowUnchanged(ChangeEventArgs change) => ShowUnchangedChanged.InvokeAsync(change.Value is true);
 
