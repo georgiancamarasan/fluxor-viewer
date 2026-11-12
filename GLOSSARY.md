@@ -36,6 +36,10 @@ _Avoid_: Event, message, command
 The .NET type of an Action, which says what kind of Action it is; shown by its short name.
 _Avoid_: Action name, kind
 
+**Payload**:
+What an Action carried: its contents as the Host app sent them.
+_Avoid_: Body, arguments, data, action JSON
+
 **History**:
 The ordered record the Viewer keeps of a Session's Actions and its Resyncs, each with the Feature states after it.
 _Avoid_: Log, timeline, journal

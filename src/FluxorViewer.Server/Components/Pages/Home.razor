@@ -37,6 +37,10 @@
                 }
                 else
                 {
+                    @if (actions.Selected is { } action)
+                    {
+                        <PayloadStrip Action="action" @bind-Expanded="payloadExpanded" Toggles="TogglesFor(payloadToggles, action.ActionType)" />
+                    }
                     <div class="flex gap-1 border-b border-zinc-200 px-4 dark:border-zinc-800" role="tablist" aria-label="Right pane" data-test="tabs">
                         @foreach (var tab in Enum.GetValues<RightTab>())
                         {
@@ -53,7 +57,7 @@
                         else
                         {
                             <StatePane Feature="@features.Selected" Action="actions.Selected" Current="SelectedSession?.Current ?? []"
-                                       Toggles="TogglesFor(features.Selected)" />
+                                       Toggles="TogglesFor(toggles, features.Selected)" />
                         }
                     </div>
                 }
@@ -71,6 +75,10 @@
 
     // The State tab's expand/collapse choices, per Feature name for this Viewer tab.
     private readonly Dictionary<string, Dictionary<string, bool>> toggles = [];
+
+    // The payload strip: open or collapsed whatever the Action, and its tree's choices per full Action type, for this Viewer tab.
+    private bool payloadExpanded;
+    private readonly Dictionary<string, Dictionary<string, bool>> payloadToggles = [];
 
     // The right pane's tab and the Diff tab's "Show unchanged", for this Viewer tab whatever the Action, Feature or Session.
     private enum RightTab { State, Diff }
@@ -120,8 +128,8 @@
         UpdateSelectedSession();
     }
 
-    private Dictionary<string, bool> TogglesFor(string? feature) =>
-        feature is null ? [] : toggles.TryGetValue(feature, out var choices) ? choices : toggles[feature] = [];
+    private static Dictionary<string, bool> TogglesFor(Dictionary<string, Dictionary<string, bool>> byKey, string? key) =>
+        key is null ? [] : byKey.TryGetValue(key, out var choices) ? choices : byKey[key] = [];
 
     private ReceivedSession? SelectedSession => sessions.FirstOrDefault(s => s.SessionId == selection.Selected);
 

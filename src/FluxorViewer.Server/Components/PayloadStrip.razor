@@ -1,0 +1,65 @@
+<div class="border-b border-zinc-200 px-4 py-2 dark:border-zinc-800" data-test="payload">
+    @if (error is not null)
+    {
+        <p class="flex items-center gap-2 text-sm">
+            <span class="toolbar-label">Payload</span>
+            <span class="min-w-0 flex-1 rounded-md border border-red-300 bg-red-50 px-2 py-0.5 font-mono text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
+                  data-test="payload-error">Couldn't serialise <span title="@Action.ActionType">@ActionTypeName.Short(Action.ActionType)</span>: @error</span>
+        </p>
+    }
+    else if (!line.CanExpand)
+    {
+        <p class="flex items-center gap-2 text-sm">
+            <span class="toolbar-label pl-5">Payload</span>
+            <code class="min-w-0 flex-1 truncate" data-test="payload-line">@line.Text</code>
+        </p>
+    }
+    else
+    {
+        <button type="button" class="flex w-full min-w-0 cursor-pointer items-center gap-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-sky-500"
+                aria-expanded="@(Expanded ? "true" : "false")" aria-controls="payload-tree" data-test="payload-toggle" @onclick="Toggle">
+            <span class="w-3 text-center text-zinc-500" aria-hidden="true">@(Expanded ? "▾" : "▸")</span>
+            <span class="toolbar-label">Payload</span>
+            @if (!Expanded)
+            {
+                <code class="min-w-0 flex-1 truncate" data-test="payload-line">@line.Text</code>
+            }
+        </button>
+        @if (Expanded)
+        {
+            @* At most about a third of the screen, so the tabs and state stay in view below a large Payload. *@
+            <div id="payload-tree" class="mt-2 max-h-[33vh] overflow-auto" data-test="payload-tree">
+                <JsonTree Json="@Action.ActionJson" Toggles="Toggles" />
+            </div>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>The selected Action, whose Payload this shows.</summary>
+    [Parameter, EditorRequired] public ActionEntry Action { get; set; } = null!;
+
+    /// <summary>Whether the Payload shows as a tree rather than one line; kept by the caller across Actions.</summary>
+    [Parameter] public bool Expanded { get; set; }
+
+    [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
+
+    /// <summary>The tree's expand/collapse choices for this Action type, kept by the caller.</summary>
+    [Parameter, EditorRequired] public Dictionary<string, bool> Toggles { get; set; } = [];
+
+    private string? shown;
+    private PayloadLine line = new("", false);
+    private string? error;
+
+    protected override void OnParametersSet()
+    {
+        // Parsing a large Payload isn't free, so only a different Payload is re-read, not every render.
+        if (ReferenceEquals(Action.ActionJson, shown))
+            return;
+        shown = Action.ActionJson;
+        error = SerialisationError.In(shown);
+        line = error is null ? PayloadLine.Of(shown) : new PayloadLine("", false);
+    }
+
+    private Task Toggle() => ExpandedChanged.InvokeAsync(!Expanded);
+}

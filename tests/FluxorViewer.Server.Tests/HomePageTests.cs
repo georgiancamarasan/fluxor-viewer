@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FluxorViewer.Server.Tests;
 
-// UI-1 to UI-5: the layout shell, Session and Feature pickers, Action list, and State and Diff tabs, against a real registry.
+// UI-1 to UI-6: the layout shell, Session and Feature pickers, Action list, State and Diff tabs, and payload strip, against a real registry.
 public class HomePageTests : BunitContext
 {
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance);
@@ -689,5 +689,126 @@ public class HomePageTests : BunitContext
         page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("[data-test=new-actions]")));
 
         Assert.Equal(renders, DiffRenders.Count);
+    }
+
+    private void DispatchPayload(Guid sessionId, long sequence, string type, string payload) =>
+        registry.ActionsReceived("c1", [new ActionRecorded(sessionId, sequence, At, type, payload, [])]);
+
+    private static string PayloadLine(IRenderedComponent<Home> page) => page.Find("[data-test=payload-line]").TextContent;
+
+    private static void TogglePayload(IRenderedComponent<Home> page) => page.Find("[data-test=payload-toggle]").Click();
+
+    [Fact]
+    public void The_payload_strip_shows_the_selected_Actions_Payload_on_one_line_above_both_tabs()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        DispatchPayload(Id("aaaa"), 1, "App.Rename", """{"name":"café","count":2}""");
+        var page = Render<Home>();
+
+        Assert.Equal("""{"name":"café","count":2}""", PayloadLine(page));
+        Assert.Equal("false", page.Find("[data-test=payload-toggle]").GetAttribute("aria-expanded"));
+        Assert.Empty(page.FindAll("[data-test=payload-tree]"));
+
+        ShowTab(page, "Diff");
+        Assert.Equal("""{"name":"café","count":2}""", PayloadLine(page));
+    }
+
+    [Fact]
+    public void Without_a_selected_Action_there_is_no_payload_strip()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+
+        var page = Render<Home>();
+
+        Assert.Empty(page.FindAll("[data-test=payload]"));
+    }
+
+    [Fact]
+    public void Expanding_shows_the_Payload_as_a_tree_and_stays_expanded_across_Actions_and_Sessions()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
+        DispatchPayload(Id("aaaa"), 1, "App.Rename", """{"name":"a"}""");
+        DispatchPayload(Id("aaaa"), 2, "App.Rename", """{"name":"b"}""");
+        registry.ActionsReceived("c2", [new ActionRecorded(Id("bbbb"), 1, At, "App.Other", """{"x":1}""", [])]);
+        var page = Render<Home>();
+        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+
+        TogglePayload(page);
+        var toggle = page.Find("[data-test=payload-toggle]");
+        Assert.Equal("true", toggle.GetAttribute("aria-expanded"));
+        Assert.Equal("payload-tree", toggle.GetAttribute("aria-controls"));
+        Assert.Equal(["\"b\""], PayloadValues(page));
+        Assert.Empty(page.FindAll("[data-test=payload-line]"));
+
+        page.FindAll("[data-test=action-row]")[0].Click();
+        Assert.Equal(["\"a\""], PayloadValues(page));
+
+        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        Assert.Equal(["1"], PayloadValues(page));
+
+        TogglePayload(page);
+        Assert.Empty(page.FindAll("[data-test=payload-tree]"));
+        Assert.Equal("""{"x":1}""", PayloadLine(page));
+    }
+
+    private static string[] PayloadValues(IRenderedComponent<Home> page) =>
+        [.. page.FindAll("[data-test=payload-tree] [data-test=value]").Select(v => v.TextContent)];
+
+    private static bool PayloadOpen(IRenderedComponent<Home> page, string path) =>
+        page.FindAll($"[data-test=payload-tree] [data-path='{path}'] > [data-test=toggle]") is [var toggle]
+        && toggle.GetAttribute("aria-expanded") == "true";
+
+    [Fact]
+    public void The_Payload_trees_expand_and_collapse_choices_belong_to_the_Action_type()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        DispatchPayload(Id("aaaa"), 1, "App.Load", """{"a":{"b":{"c":1}}}""");
+        DispatchPayload(Id("aaaa"), 2, "App.Save", """{"a":{"b":{"c":2}}}""");
+        DispatchPayload(Id("aaaa"), 3, "App.Load", """{"a":{"b":{"c":3}}}""");
+        var page = Render<Home>();
+        page.FindAll("[data-test=action-row]")[0].Click();
+        TogglePayload(page);
+
+        page.Find("[data-test=payload-tree] [data-path='$.a.b'] > [data-test=toggle]").Click();
+        Assert.True(PayloadOpen(page, "$.a.b"));
+
+        page.FindAll("[data-test=action-row]")[1].Click();
+        Assert.False(PayloadOpen(page, "$.a.b"));
+
+        page.FindAll("[data-test=action-row]")[2].Click();
+        Assert.True(PayloadOpen(page, "$.a.b"));
+        Assert.Equal(["3"], PayloadValues(page));
+    }
+
+    [Fact]
+    public void An_empty_Payload_shows_without_a_toggle()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        DispatchPayload(Id("aaaa"), 1, "App.Reset", "{}");
+
+        var page = Render<Home>();
+
+        Assert.Equal("{}", PayloadLine(page));
+        Assert.Empty(page.FindAll("[data-test=payload-toggle]"));
+    }
+
+    [Fact]
+    public void A_Payload_that_failed_to_serialise_shows_as_an_error_but_other_error_properties_are_data()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        DispatchPayload(Id("aaaa"), 1, "App.Items.LoadAction", """{"$error":"Cycle detected"}""");
+        DispatchPayload(Id("aaaa"), 2, "App.Odd", """{"$error":"not really","count":1}""");
+        var page = Render<Home>();
+        page.FindAll("[data-test=action-row]")[0].Click();
+
+        var error = page.Find("[data-test=payload-error]");
+        Assert.Equal("Couldn't serialise LoadAction: Cycle detected", error.TextContent.Trim());
+        Assert.Equal("App.Items.LoadAction", error.QuerySelector("[title]")!.GetAttribute("title"));
+        Assert.Empty(page.FindAll("[data-test=payload-toggle]"));
+
+        page.FindAll("[data-test=action-row]")[1].Click();
+        Assert.Empty(page.FindAll("[data-test=payload-error]"));
+        Assert.Equal("""{"$error":"not really","count":1}""", PayloadLine(page));
     }
 }
