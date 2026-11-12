@@ -30,15 +30,32 @@
                     <ActionListPane List="actions" HasFeature="features.Selected is not null" SelectedChanged="StateHasChanged" />
                 }
             </section>
-            <section class="pane flex-1">
+            <section class="flex min-h-0 flex-1 flex-col">
                 @if (selection.Selected is null)
                 {
-                    <Placeholder Selected="false" />
+                    <div class="pane"><Placeholder Selected="false" /></div>
                 }
                 else
                 {
-                    <StatePane Feature="@features.Selected" Action="actions.Selected" Current="SelectedSession?.Current ?? []"
-                               Toggles="TogglesFor(features.Selected)" />
+                    <div class="flex gap-1 border-b border-zinc-200 px-4 dark:border-zinc-800" role="tablist" aria-label="Right pane" data-test="tabs">
+                        @foreach (var tab in Enum.GetValues<RightTab>())
+                        {
+                            var selected = tab == rightTab;
+                            <button class="-mb-px border-b-2 px-3 py-2 text-sm @(selected ? "border-sky-600 text-zinc-900 dark:border-sky-400 dark:text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100")"
+                                    role="tab" aria-selected="@(selected ? "true" : "false")" data-test="tab" @onclick="() => rightTab = tab">@tab</button>
+                        }
+                    </div>
+                    <div class="pane flex-1" role="tabpanel" aria-label="@rightTab">
+                        @if (rightTab == RightTab.Diff)
+                        {
+                            <DiffPane Feature="@features.Selected" Action="actions.Selected" @bind-ShowUnchanged="showUnchanged" />
+                        }
+                        else
+                        {
+                            <StatePane Feature="@features.Selected" Action="actions.Selected" Current="SelectedSession?.Current ?? []"
+                                       Toggles="TogglesFor(features.Selected)" />
+                        }
+                    </div>
                 }
             </section>
         </main>
@@ -54,6 +71,11 @@
 
     // The State tab's expand/collapse choices, per Feature name for this Viewer tab.
     private readonly Dictionary<string, Dictionary<string, bool>> toggles = [];
+
+    // The right pane's tab and the Diff tab's "Show unchanged", for this Viewer tab whatever the Action, Feature or Session.
+    private enum RightTab { State, Diff }
+    private RightTab rightTab = RightTab.State;
+    private bool showUnchanged;
 
     protected override void OnInitialized()
     {

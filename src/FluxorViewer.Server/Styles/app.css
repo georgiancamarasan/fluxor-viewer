@@ -1,6 +1,8 @@
 /* Tailwind input; built into wwwroot/app.css by the Tailwind target in the .csproj (or `npm run watch`). */
 @import "tailwindcss" source(none);
 @source "../Components";
+/* The Diff tab's markup comes from jsondiffpatch (DiffPane.razor.js); its structural styles, restyled below. */
+@import "jsondiffpatch/formatters/styles/html.css" layer(components);
 
 @layer components {
     .control {
@@ -70,6 +72,53 @@
 
     .json-null {
         @apply text-zinc-400 italic dark:text-zinc-500;
+    }
+
+    /*
+     * jsondiffpatch's markup can't take utility classes, so its classes are restyled here for both themes, in the
+     * JSON tree's type and colours. Same layer and later than its stylesheet, so these win.
+     */
+    .json-diff {
+        @apply font-mono text-sm leading-6;
+    }
+
+    .json-diff .jsondiffpatch-delta,
+    .json-diff .jsondiffpatch-delta pre {
+        font: inherit;
+    }
+
+    .json-diff .jsondiffpatch-delta pre {
+        @apply rounded-sm px-0.5 whitespace-pre-wrap;
+    }
+
+    .json-diff .jsondiffpatch-property-name {
+        @apply text-zinc-700 dark:text-zinc-300;
+    }
+
+    .json-diff .jsondiffpatch-added .jsondiffpatch-property-name,
+    .json-diff .jsondiffpatch-added .jsondiffpatch-value pre,
+    .json-diff .jsondiffpatch-modified .jsondiffpatch-right-value pre {
+        @apply bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200;
+    }
+
+    .json-diff .jsondiffpatch-deleted .jsondiffpatch-property-name,
+    .json-diff .jsondiffpatch-deleted pre,
+    .json-diff .jsondiffpatch-modified .jsondiffpatch-left-value pre {
+        @apply bg-red-100 text-red-900 line-through dark:bg-red-900/50 dark:text-red-200;
+    }
+
+    .json-diff .jsondiffpatch-unchanged,
+    .json-diff .jsondiffpatch-movedestination {
+        @apply text-zinc-400 dark:text-zinc-500;
+    }
+
+    .json-diff .jsondiffpatch-moved .jsondiffpatch-moved-destination {
+        @apply bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200;
+    }
+
+    /* Hidden unchanged values take no space at all, rather than collapsing to a sliver. */
+    .json-diff.jsondiffpatch-unchanged-hidden .jsondiffpatch-unchanged {
+        display: none;
     }
 
     .muted {

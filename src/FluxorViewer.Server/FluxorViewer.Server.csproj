@@ -33,4 +33,21 @@
     </ItemGroup>
   </Target>
 
+  <!--
+    jsondiffpatch (the Diff tab) is copied from node_modules into wwwroot/lib (gitignored) so the tool works offline.
+    with-text-diffs.js is left out: it needs diff-match-patch, and strings aren't diffed character by character.
+  -->
+  <Target Name="JsonDiffPatch" DependsOnTargets="NpmInstall" BeforeTargets="BeforeBuild">
+    <ItemGroup>
+      <JsonDiffPatchFile Include="node_modules/jsondiffpatch/lib/**/*.js" Exclude="node_modules/jsondiffpatch/lib/with-text-diffs.js" />
+    </ItemGroup>
+    <Copy SourceFiles="@(JsonDiffPatchFile)" SkipUnchangedFiles="true"
+          DestinationFiles="@(JsonDiffPatchFile->'wwwroot/lib/jsondiffpatch/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <!-- As for app.css: on a clean build these didn't exist when wwwroot was globbed. -->
+    <ItemGroup>
+      <Content Remove="wwwroot/lib/jsondiffpatch/**" />
+      <Content Include="wwwroot/lib/jsondiffpatch/**" />
+    </ItemGroup>
+  </Target>
+
 </Project>

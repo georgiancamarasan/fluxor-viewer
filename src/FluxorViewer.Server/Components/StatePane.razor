@@ -7,7 +7,7 @@
             else
             {<text>after #@Action.Sequence </text><span class="font-mono" title="@Action.ActionType">@ActionTypeName.Short(Action.ActionType)</span>}
         </p>
-        @if (SerialisationError(state.StateJson) is { } error)
+        @if (SerialisationError.In(state.StateJson) is { } error)
         {
             <p class="state-error" data-test="state-error">Couldn't serialise @Feature: @error</p>
         }
@@ -34,22 +34,4 @@ else if (Feature is not null)
 
     /// <summary>The selected Session's current Feature states.</summary>
     [Parameter, EditorRequired] public ImmutableDictionary<string, FeatureState> Current { get; set; } = ImmutableDictionary<string, FeatureState>.Empty;
-
-    /// <summary>
-    /// The message when the middleware couldn't serialise the state and sent exactly <c>{"$error": "message"}</c> in its
-    /// place; null for anything else, including a state that merely has a <c>$error</c> property. Stops reading at the
-    /// first token that doesn't fit, so large states cost almost nothing.
-    /// </summary>
-    private static string? SerialisationError(string json)
-    {
-        var reader = new System.Text.Json.Utf8JsonReader(System.Text.Encoding.UTF8.GetBytes(json));
-        if (!reader.Read() || reader.TokenType != System.Text.Json.JsonTokenType.StartObject)
-            return null;
-        if (!reader.Read() || reader.TokenType != System.Text.Json.JsonTokenType.PropertyName || !reader.ValueTextEquals("$error"))
-            return null;
-        if (!reader.Read() || reader.TokenType != System.Text.Json.JsonTokenType.String)
-            return null;
-        var message = reader.GetString();
-        return reader.Read() && reader.TokenType == System.Text.Json.JsonTokenType.EndObject ? message : null;
-    }
 }

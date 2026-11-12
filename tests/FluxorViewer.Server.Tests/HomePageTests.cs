@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FluxorViewer.Server.Tests;
 
-// UI-1 to UI-4: the layout shell, Session and Feature pickers, Action list and State tab, against a real registry.
+// UI-1 to UI-5: the layout shell, Session and Feature pickers, Action list, and State and Diff tabs, against a real registry.
 public class HomePageTests : BunitContext
 {
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance);
@@ -15,12 +15,17 @@ public class HomePageTests : BunitContext
     // The Action list's scrolling, recorded rather than run.
     private readonly BunitJSModuleInterop scroll;
 
+    // The Diff tab's rendering, recorded rather than run: jsondiffpatch runs in the browser.
+    private readonly BunitJSModuleInterop diff;
+
     public HomePageTests()
     {
         Services.AddSingleton(registry);
         Services.AddSingleton(TimeProvider.System);
         scroll = JSInterop.SetupModule("./Components/ActionListPane.razor.js");
         scroll.SetupVoid("scrollToBottom", _ => true);
+        diff = JSInterop.SetupModule("./Components/DiffPane.razor.js");
+        diff.Setup<bool>("render", _ => true).SetResult(true);
     }
 
     private static Snapshot NewSnapshot(Guid sessionId, string appName = "MyApp", Runtime runtime = Runtime.WebAssembly, params string[] features) => new(
@@ -375,7 +380,8 @@ public class HomePageTests : BunitContext
 
         page.Find("[data-test=new-actions]").Click();
 
-        Assert.Equal("D", SelectedRow(page));
+        // The rows are Virtualize's to render, which may land just after the click returns.
+        page.WaitForAssertion(() => Assert.Equal("D", SelectedRow(page)));
         Assert.Empty(page.FindAll("[data-test=new-actions]"));
     }
 
@@ -533,5 +539,155 @@ public class HomePageTests : BunitContext
 
         page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
         Assert.True(Open(page, "$.a.b"));
+    }
+
+    private static void ShowTab(IRenderedComponent<Home> page, string name) =>
+        page.FindAll("[data-test=tab]").Single(t => t.TextContent.Trim() == name).Click();
+
+    private static string SelectedTab(IRenderedComponent<Home> page) =>
+        page.Find("[data-test=tab][aria-selected=true]").TextContent.Trim();
+
+    private static string DiffMessage(IRenderedComponent<Home> page) => page.Find("[data-test=diff-message]").TextContent.Trim();
+
+    private IReadOnlyList<JSRuntimeInvocation> DiffRenders => diff.Invocations["render"];
+
+    [Fact]
+    public void The_State_tab_is_shown_first_and_the_tab_choice_survives_changing_Action_Feature_and_Session()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), "MyApp", features: ["Auth", "Counter"]));
+        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other", features: ["Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        var page = Render<Home>();
+        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+
+        Assert.Equal("State", SelectedTab(page));
+        Assert.NotEmpty(page.FindAll("[data-test=state]"));
+
+        ShowTab(page, "Diff");
+        Assert.Equal("Diff", SelectedTab(page));
+        Assert.Empty(page.FindAll("[data-test=state]"));
+        Assert.NotEmpty(page.FindAll("[data-test=diff]"));
+
+        page.FindAll("[data-test=action-row]")[0].Click();
+        page.Find("[data-test=feature-picker] select").Change("Auth");
+        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        Assert.Equal("Diff", SelectedTab(page));
+
+        ShowTab(page, "State");
+        Assert.NotEmpty(page.FindAll("[data-test=state]"));
+    }
+
+    [Fact]
+    public void The_Diff_tab_sends_before_and_after_to_the_browser_under_a_header()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        var page = Render<Home>();
+
+        ShowTab(page, "Diff");
+
+        Assert.Equal("CounterState · #2 Increment · before → after",
+            string.Join(' ', page.Find("[data-test=diff-header]").TextContent.Split((char[])[' ', '\n'], StringSplitOptions.RemoveEmptyEntries)));
+        var render = Assert.Single(DiffRenders);
+        Assert.Equal(["""{"v":1}""", """{"v":2}""", false], render.Arguments.Skip(1));
+        Assert.Empty(page.FindAll("[data-test=diff-message]"));
+    }
+
+    [Fact]
+    public void Show_unchanged_rediffs_and_is_kept_across_Actions_and_Features()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Auth", "Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter", "Auth");
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter", "Auth");
+        var page = Render<Home>();
+        ShowTab(page, "Diff");
+
+        Assert.False(page.Find("[data-test=show-unchanged]").HasAttribute("checked"));
+        page.Find("[data-test=show-unchanged]").Change(true);
+
+        Assert.Equal(true, DiffRenders[^1].Arguments[3]);
+        page.FindAll("[data-test=action-row]")[0].Click();
+        page.Find("[data-test=feature-picker] select").Change("Counter");
+        Assert.True(page.Find("[data-test=show-unchanged]").HasAttribute("checked"));
+        Assert.Equal(true, DiffRenders[^1].Arguments[3]);
+    }
+
+    [Fact]
+    public void The_Diff_tab_explains_when_there_is_no_diff_to_show()
+    {
+        registry.SnapshotReceived("c1", new Snapshot(ProtocolVersion.Current, Id("aaaa"), "MyApp", Runtime.Server, DateTimeOffset.UtcNow, 0, 0,
+            [new FeatureState("Counter", "App.CounterState", "{}"), new FeatureState("Broken", "App.BrokenState", "{}")]));
+        var page = Render<Home>();
+        ShowTab(page, "Diff");
+        page.Find("[data-test=feature-picker] select").Change("Counter");
+
+        Assert.Equal("Select an Action to see what it changed", DiffMessage(page));
+
+        registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, At, "App.Noop", "{}",
+            [new FeatureState("Counter", "App.CounterState", "{}"), new FeatureState("Broken", "App.BrokenState", """{"$error":"Cycle"}""")])]);
+        page.WaitForAssertion(() => Assert.Equal("Counter was replaced with an identical state", DiffMessage(page)));
+        Assert.Empty(page.FindAll("[data-test=show-unchanged]"));
+
+        page.Find("[data-test=feature-picker] select").Change("Broken");
+        Assert.Equal("Couldn't serialise Broken after this Action: Cycle", page.Find("[data-test=diff-error]").TextContent.Trim());
+
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        page.WaitForAssertion(() => Assert.Equal("No change to Broken", DiffMessage(page)));
+
+        Assert.Empty(DiffRenders);
+    }
+
+    [Fact]
+    public void A_Feature_missing_after_the_selected_Action_says_it_did_not_exist_then()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter", "Auth"]));
+        Dispatch("c1", Id("aaaa"), 2, "App.Login", "Auth");
+        var page = Render<Home>();
+        ShowTab(page, "Diff");
+
+        page.FindAll("[data-test=action-row]")[0].Click();
+        page.Find("[data-test=feature-picker] select").Change("Auth");
+
+        Assert.Equal("Auth didn't exist at this point", DiffMessage(page));
+    }
+
+    [Fact]
+    public void Differences_the_browser_cannot_see_are_explained()
+    {
+        diff.Setup<bool>("render", i => i.Arguments[2] is """{"v":1}""").SetResult(false);
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        var page = Render<Home>();
+
+        ShowTab(page, "Diff");
+
+        page.WaitForAssertion(() =>
+            Assert.Equal("Counter was replaced; the differences are beyond what the diff can show", DiffMessage(page)));
+        Assert.Empty(page.FindAll("[data-test=show-unchanged]"));
+
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        page.WaitForAssertion(() => Assert.Empty(page.FindAll("[data-test=diff-message]")));
+        Assert.NotEmpty(page.FindAll("[data-test=show-unchanged]"));
+    }
+
+    [Fact]
+    public void The_diff_is_recomputed_only_when_the_Action_or_Feature_changes()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        var page = Render<Home>();
+        ShowTab(page, "Diff");
+        page.FindAll("[data-test=action-row]")[0].Click();
+        var renders = DiffRenders.Count;
+
+        Dispatch("c1", Id("aaaa"), 3, "App.Increment", "Counter");
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("[data-test=new-actions]")));
+
+        Assert.Equal(renders, DiffRenders.Count);
     }
 }

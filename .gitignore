@@ -481,6 +481,7 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
-# Node (Tailwind build) and its generated CSS
+# Node (Tailwind build, jsondiffpatch) and the files copied or built from it
 node_modules/
 src/FluxorViewer.Server/wwwroot/app.css
+src/FluxorViewer.Server/wwwroot/lib/

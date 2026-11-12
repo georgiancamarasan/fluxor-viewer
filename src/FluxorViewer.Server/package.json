@@ -4,6 +4,9 @@
     "build": "tailwindcss -i Styles/app.css -o wwwroot/app.css --minify",
     "watch": "tailwindcss -i Styles/app.css -o wwwroot/app.css --watch"
   },
+  "dependencies": {
+    "jsondiffpatch": "0.7.7"
+  },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.5",
     "tailwindcss": "4.3.5"
