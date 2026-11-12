@@ -15,9 +15,12 @@ public class ActionListTests
         sequence, DateTimeOffset.UtcNow, type, "{}", changed.ToFrozenSet(),
         ImmutableDictionary<string, FeatureState>.Empty, ImmutableDictionary<string, FeatureState>.Empty);
 
-    private static ReceivedSession Session(params ActionEntry[] history) => Session(Guid.NewGuid(), history);
+    private static ResyncEntry Resync(long sequence, long? lost = 1) => new(
+        sequence, DateTimeOffset.UtcNow, lost, ImmutableDictionary<string, FeatureState>.Empty);
 
-    private static ReceivedSession Session(Guid id, params ActionEntry[] history) => new(
+    private static ReceivedSession Session(params HistoryEntry[] history) => Session(Guid.NewGuid(), history);
+
+    private static ReceivedSession Session(Guid id, params HistoryEntry[] history) => new(
         id, "MyApp", Runtime.Server, DateTimeOffset.UtcNow, "c", history, ImmutableDictionary<string, FeatureState>.Empty, 0);
 
     private long[] Sequences => [.. list.Rows.Select(r => r.Entry.Sequence)];
@@ -237,5 +240,78 @@ public class ActionListTests
 
         Assert.Equal(1, list.Selected?.Sequence);
         Assert.False(list.Following);
+    }
+
+    // IN-5: Resync rows.
+
+    [Fact]
+    public void Resyncs_are_rows_in_History_order_that_the_filter_and_changed_only_never_hide()
+    {
+        list.Filter = "nothing matches";
+        list.ChangedOnly = true;
+
+        list.Update(Session(Action(1, changed: "Counter"), Resync(5), Action(6, changed: "Counter")), "Counter");
+
+        var row = Assert.Single(list.Rows);
+        Assert.IsType<ResyncEntry>(row.Entry);
+        Assert.False(row.Dimmed);
+        Assert.Equal(2, list.ActionCount);
+        Assert.Equal(0, list.ActionRowCount); // so the pane still says "No Actions match"
+    }
+
+    [Fact]
+    public void Resyncs_do_not_count_as_Actions()
+    {
+        list.Update(Session(Resync(40, lost: 12)), null);
+
+        Assert.Equal(0, list.ActionCount);
+        Assert.IsType<ResyncEntry>(Assert.Single(list.Rows).Entry);
+    }
+
+    [Fact]
+    public void A_Resync_and_an_Action_at_the_same_Sequence_are_selected_separately()
+    {
+        list.Update(Session(Action(3), Resync(3, lost: null), Action(4)), null);
+
+        list.SelectResync(3);
+        Assert.IsType<ResyncEntry>(list.Selected);
+
+        list.Select(3);
+        Assert.IsType<ActionEntry>(list.Selected);
+        Assert.Equal(3, list.Selected.Sequence);
+    }
+
+    [Fact]
+    public void A_selected_Resync_stays_selected_as_the_History_is_re_read()
+    {
+        var id = Guid.NewGuid();
+        list.Update(Session(id, Action(1), Resync(5), Action(6)), null);
+        list.SelectResync(5);
+
+        list.Update(Session(id, Action(1), Resync(5), Action(6), Action(7)), null);
+
+        Assert.IsType<ResyncEntry>(list.Selected);
+        Assert.False(list.Following);
+    }
+
+    [Fact]
+    public void Follow_mode_selects_a_Resync_that_is_newest()
+    {
+        list.Update(Session(Action(1), Resync(5)), null);
+
+        Assert.True(list.Following);
+        Assert.IsType<ResyncEntry>(list.Selected);
+    }
+
+    [Fact]
+    public void While_paused_new_Resyncs_are_counted_with_new_Actions()
+    {
+        var id = Guid.NewGuid();
+        list.Update(Session(id, Action(1), Action(2)), null);
+        list.Select(1);
+
+        list.Update(Session(id, Action(1), Action(2), Resync(5), Action(6)), null);
+
+        Assert.Equal(2, list.NewCount);
     }
 }

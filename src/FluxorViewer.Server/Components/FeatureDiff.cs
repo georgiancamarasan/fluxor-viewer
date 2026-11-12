@@ -10,6 +10,9 @@ public abstract record FeatureDiff
     /// <summary>No Action is selected, so there's no before → after.</summary>
     public sealed record NoAction : FeatureDiff;
 
+    /// <summary>A Resync is selected: what came before it was lost, so there's nothing to diff against.</summary>
+    public sealed record Unavailable : FeatureDiff;
+
     /// <summary>The Feature isn't in the state after the Action.</summary>
     public sealed record Missing : FeatureDiff;
 
@@ -27,10 +30,12 @@ public abstract record FeatureDiff
     /// <param name="Before">The state before the Action, or null when the Feature didn't exist yet (all of it is added).</param>
     public sealed record Changes(string? Before, string After) : FeatureDiff;
 
-    /// <summary>Decides what the Diff tab shows for <paramref name="feature"/> at <paramref name="action"/>.</summary>
-    public static FeatureDiff For(ActionEntry? action, string feature)
+    /// <summary>Decides what the Diff tab shows for <paramref name="feature"/> at <paramref name="entry"/>.</summary>
+    public static FeatureDiff For(HistoryEntry? entry, string feature)
     {
-        if (action is null)
+        if (entry is ResyncEntry)
+            return new Unavailable();
+        if (entry is not ActionEntry action)
             return new NoAction();
         if (action.After.GetValueOrDefault(feature) is not { } after)
             return new Missing();

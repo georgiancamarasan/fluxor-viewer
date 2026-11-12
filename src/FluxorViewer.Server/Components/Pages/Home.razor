@@ -37,7 +37,7 @@
                 }
                 else
                 {
-                    @if (actions.Selected is { } action)
+                    @if (actions.Selected is ActionEntry action)
                     {
                         <PayloadStrip Action="action" @bind-Expanded="payloadExpanded" Toggles="TogglesFor(payloadToggles, action.ActionType)" />
                     }
@@ -52,11 +52,11 @@
                     <div class="pane flex-1" role="tabpanel" aria-label="@rightTab">
                         @if (rightTab == RightTab.Diff)
                         {
-                            <DiffPane Feature="@features.Selected" Action="actions.Selected" @bind-ShowUnchanged="showUnchanged" />
+                            <DiffPane Feature="@features.Selected" Entry="actions.Selected" @bind-ShowUnchanged="showUnchanged" />
                         }
                         else
                         {
-                            <StatePane Feature="@features.Selected" Action="actions.Selected" Current="SelectedSession?.Current ?? []"
+                            <StatePane Feature="@features.Selected" Entry="actions.Selected" Current="SelectedSession?.Current ?? []"
                                        Toggles="TogglesFor(toggles, features.Selected)" />
                         }
                     </div>

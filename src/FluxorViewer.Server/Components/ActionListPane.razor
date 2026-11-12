@@ -12,33 +12,50 @@
     </label>
 </div>
 
+@* The messages are about Actions only; Resync rows still show beneath them. *@
 @if (List.ActionCount == 0)
 {
     <p class="muted p-4" data-test="no-actions">No Actions yet</p>
 }
-else if (List.Rows.Length == 0)
+else if (List.ActionRowCount == 0)
 {
     <p class="muted p-4" data-test="no-match">
         No Actions match.
         <button class="underline" data-test="show-all" @onclick="ShowAll">Show all</button>
     </p>
 }
-else
+@if (List.Rows.Length > 0)
 {
     <div class="relative min-h-0 flex-1">
-        <div class="h-full overflow-auto" role="listbox" aria-label="Actions" @ref="scroller">
+        <div class="h-full overflow-auto" role="listbox" aria-label="Actions" data-test="action-list" @ref="scroller">
             @* Fixed row height (h-7 = 28px) keeps virtualisation exact. *@
             <Virtualize Items="List.Rows" ItemSize="28" Context="row">
-                @{ var selected = row.Entry.Sequence == List.Selected?.Sequence; }
+              @if (row.Entry is ActionEntry action)
+              {
+                var selected = ReferenceEquals(action, List.Selected);
                 <div class="action-row @(selected ? "action-row-selected" : "") @(row.Dimmed ? "opacity-45" : "")"
                      role="option" aria-selected="@(selected ? "true" : "false")" data-dimmed="@(row.Dimmed ? "true" : "false")"
                      data-test="action-row" @key="row.Entry.Sequence" @onclick="() => Select(row.Entry.Sequence)">
                     <span class="w-12 shrink-0 text-right text-zinc-500 tabular-nums" data-test="sequence">@row.Entry.Sequence</span>
-                    <span class="min-w-0 flex-1 truncate font-mono" data-test="type" title="@row.Entry.ActionType">@row.ShortName</span>
-                    @{ var local = row.Entry.Timestamp.ToLocalTime(); }
+                    <span class="min-w-0 flex-1 truncate font-mono" data-test="type" title="@action.ActionType">@row.ShortName</span>
+                    @{ var local = action.Timestamp.ToLocalTime(); }
                     <span class="shrink-0 text-zinc-500 tabular-nums" data-test="time"
                           title="@local.ToString("yyyy-MM-dd HH:mm:ss.fff zzz")">@local.ToString("HH:mm:ss.fff")</span>
                 </div>
+              }
+              else if (row.Entry is ResyncEntry resync)
+              {
+                var selected = ReferenceEquals(resync, List.Selected);
+                <div class="action-row @(selected ? "action-row-selected" : "")"
+                     role="option" aria-selected="@(selected ? "true" : "false")"
+                     data-test="resync-row" @key="ResyncKey(resync)" @onclick="() => SelectResync(resync.Sequence)">
+                    <span class="w-12 shrink-0"></span>
+                    <span class="min-w-0 flex-1 truncate text-amber-700 dark:text-amber-400" data-test="resync" title="@LostRange(resync)">@ResyncLabel(resync)</span>
+                    @{ var local = resync.ReceivedAt.ToLocalTime(); }
+                    <span class="shrink-0 text-zinc-500 tabular-nums" data-test="time"
+                          title="@local.ToString("yyyy-MM-dd HH:mm:ss.fff zzz")">@local.ToString("HH:mm:ss.fff")</span>
+                </div>
+              }
             </Virtualize>
         </div>
         @if (List.NewCount > 0)
@@ -63,7 +80,7 @@ else
     private IJSObjectReference? module;
 
     // The newest row the list last scrolled to while following; null while paused, so resuming scrolls again.
-    private ActionEntry? scrolledTo;
+    private HistoryEntry? scrolledTo;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -115,4 +132,28 @@ else
         List.Select(sequence);
         return SelectedChanged.InvokeAsync();
     }
+
+    private Task SelectResync(long sequence)
+    {
+        List.SelectResync(sequence);
+        return SelectedChanged.InvokeAsync();
+    }
+
+    // An Action and a Resync may share a Sequence, so the keys say which is which.
+    private static string ResyncKey(ResyncEntry resync) => $"resync-{resync.Sequence}";
+
+    private static string ResyncLabel(ResyncEntry resync) => resync.Lost switch
+    {
+        null => "⚠ resync",
+        1 => "⚠ resync — 1 action lost",
+        var lost => $"⚠ resync — {lost} actions lost",
+    };
+
+    // The lost Actions are the ones up to the Snapshot's Sequence; an older Snapshot lost none the Viewer can name.
+    private static string? LostRange(ResyncEntry resync) => resync.Lost switch
+    {
+        null => null,
+        1 => $"Action #{resync.Sequence} was lost",
+        var lost => $"Actions #{resync.Sequence - lost + 1}–#{resync.Sequence} were lost",
+    };
 }

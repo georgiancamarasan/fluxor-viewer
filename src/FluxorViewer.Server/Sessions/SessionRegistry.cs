@@ -11,7 +11,7 @@ namespace FluxorViewer.Server.Sessions;
 /// One lock guards everything: hub calls from many Sessions, closes and Clears are serialised, and readers get copies.
 /// <see cref="Changed"/> is raised after the lock is released.
 /// </remarks>
-public sealed class SessionRegistry(ILogger<SessionRegistry> logger) : ISessionRegistry
+public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvider? time = null) : ISessionRegistry
 {
     private readonly Lock gate = new();
     private readonly Dictionary<Guid, Entry> sessions = [];
@@ -27,26 +27,49 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger) : ISessionR
 
     public void SnapshotReceived(string connectionId, Snapshot snapshot)
     {
-        SessionChange? change = null;
+        List<SessionChange> changes = [];
         lock (gate)
         {
+            long? lost;
             if (!sessions.TryGetValue(snapshot.SessionId, out var session))
             {
                 sessions[snapshot.SessionId] = session = new Entry(snapshot, ++seen);
-                change = new SessionAdded(snapshot.SessionId);
+                changes.Add(new SessionAdded(snapshot.SessionId));
+                // Actions before a new Session's first Snapshot predate this Viewer; only the dropped ones were lost.
+                lost = snapshot.DroppedCount;
             }
-            else if (session.ConnectionId is null)
+            else
             {
-                change = new SessionStatusChanged(snapshot.SessionId, SessionStatus.Connected);
+                if (session.ConnectionId is null)
+                    changes.Add(new SessionStatusChanged(snapshot.SessionId, SessionStatus.Connected));
+                lost = Math.Max(snapshot.DroppedCount, snapshot.LastSequence - session.LastSequence);
+                if (snapshot.LastSequence < session.LastSequence)
+                {
+                    // The middleware never sends one (ADR 0005); if it does, take it without rewinding the History.
+                    lost = null;
+                    if (!session.WarnedOlderSnapshot)
+                    {
+                        session.WarnedOlderSnapshot = true;
+                        logger.LogWarning(
+                            "Session {SessionId} sent a Snapshot at Sequence {LastSequence}, older than the {Received} already received; recorded as a Resync.",
+                            snapshot.SessionId, snapshot.LastSequence, session.LastSequence);
+                    }
+                }
             }
 
-            // IN-5 adds a Resync to the History when Actions were lost; until then the Snapshot just becomes current.
+            if (lost is null or > 0)
+            {
+                session.History.Add(new ResyncEntry(snapshot.LastSequence, (time ?? TimeProvider.System).GetLocalNow(), lost, FeatureMap.From(snapshot.Features)));
+                changes.Add(new EntriesAppended(snapshot.SessionId, 1));
+            }
+
             session.Current = FeatureMap.From(snapshot.Features);
             session.LastSequence = snapshot.LastSequence;
             session.ConnectionId = connectionId;
             connections[connectionId] = snapshot.SessionId;
         }
-        Raise(change);
+        foreach (var change in changes)
+            Raise(change);
     }
 
     public void ActionsReceived(string connectionId, IReadOnlyList<ActionRecorded> actions)
@@ -146,10 +169,16 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger) : ISessionR
         public ImmutableDictionary<string, FeatureState> Current { get; set; } = FeatureMap.Empty;
         public long LastSequence { get; set; }
         public string? ConnectionId { get; set; }
+        public bool WarnedOlderSnapshot { get; set; }
 
-        /// <summary>Appends the Action with the state before it and after it; only its Changed Features are new.</summary>
+        /// <summary>
+        /// Appends the Action with the state before it and after it; only its Changed Features are new. An Action at or
+        /// before the last received Sequence is a duplicate and ignored.
+        /// </summary>
         public void Record(ActionRecorded action)
         {
+            if (action.Sequence <= LastSequence)
+                return;
             var before = Current;
             var after = before.SetItems(action.ChangedFeatures.Select(f => KeyValuePair.Create(f.Name, f)));
             History.Add(new ActionEntry(
@@ -186,7 +215,8 @@ public enum SessionStatus
 }
 
 /// <summary>One point in a Session's History, with the Feature states after it.</summary>
-public abstract record HistoryEntry(ImmutableDictionary<string, FeatureState> After);
+/// <param name="Sequence">Where it sits in the History; an Action and a Resync may share one.</param>
+public abstract record HistoryEntry(long Sequence, ImmutableDictionary<string, FeatureState> After);
 
 /// <summary>An Action in the History.</summary>
 /// <param name="ChangedFeatures">Names of the Features whose state this Action replaced.</param>
@@ -198,7 +228,18 @@ public sealed record ActionEntry(
     string ActionJson,
     IReadOnlySet<string> ChangedFeatures,
     ImmutableDictionary<string, FeatureState> Before,
-    ImmutableDictionary<string, FeatureState> After) : HistoryEntry(After);
+    ImmutableDictionary<string, FeatureState> After) : HistoryEntry(Sequence, After);
+
+/// <summary>A Snapshot that didn't follow on from what the Viewer already had.</summary>
+/// <param name="Sequence">The Snapshot's <c>LastSequence</c>: the Resync sits just after the last Action it covers.</param>
+/// <param name="ReceivedAt">When the Viewer received the Snapshot.</param>
+/// <param name="Lost">How many Actions the Viewer missed before it; null when the Snapshot was older than what the Viewer had.</param>
+/// <param name="After">The Snapshot's Feature states.</param>
+public sealed record ResyncEntry(
+    long Sequence,
+    DateTimeOffset ReceivedAt,
+    long? Lost,
+    ImmutableDictionary<string, FeatureState> After) : HistoryEntry(Sequence, After);
 
 /// <summary>A Session as received so far.</summary>
 /// <param name="ConnectionId">The hub connection currently reporting it, or null once that closed.</param>

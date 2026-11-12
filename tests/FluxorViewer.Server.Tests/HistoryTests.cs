@@ -125,7 +125,7 @@ public class HistoryTests(Viewer viewer) : IClassFixture<Viewer>
         await connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 10, Counter(10)) }, Ct);
 
         var session = viewer.Registry.Find(sessionId)!;
-        Assert.Equal(2, session.History.Count);
+        Assert.Equal(3, session.History.Count); // the Action, the Resync for the 8 lost, the next Action
         var next = session.Actions.Last();
         Assert.Equal("""{"Count":9}""", next.Before["Counter"].StateJson);
         Assert.Equal("""{"Count":10}""", session.Current["Counter"].StateJson);

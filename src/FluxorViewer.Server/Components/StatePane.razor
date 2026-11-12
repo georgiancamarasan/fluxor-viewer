@@ -1,11 +1,19 @@
-@if (Feature is not null && (Action?.After ?? Current).GetValueOrDefault(Feature) is { } state)
+@if (Feature is not null && (Entry?.After ?? Current).GetValueOrDefault(Feature) is { } state)
 {
     <div class="flex min-h-0 flex-col" data-test="state">
         <p class="state-header" data-test="state-header">
-            <span class="font-mono" data-test="state-type" title="@state.StateType">@ActionTypeName.Short(state.StateType)</span> · @if (Action is null)
-            {<text>current</text>}
-            else
-            {<text>after #@Action.Sequence </text><span class="font-mono" title="@Action.ActionType">@ActionTypeName.Short(Action.ActionType)</span>}
+            <span class="font-mono" data-test="state-type" title="@state.StateType">@ActionTypeName.Short(state.StateType)</span> · @switch (Entry)
+            {
+                case ActionEntry action:
+                    <text>after #@action.Sequence </text><span class="font-mono" title="@action.ActionType">@ActionTypeName.Short(action.ActionType)</span>
+                    break;
+                case ResyncEntry:
+                    <text>after resync</text>
+                    break;
+                default:
+                    <text>current</text>
+                    break;
+            }
         </p>
         @if (SerialisationError.In(state.StateJson) is { } error)
         {
@@ -26,8 +34,8 @@ else if (Feature is not null)
     /// <summary>The selected Feature's name; the pane shows nothing without one.</summary>
     [Parameter] public string? Feature { get; set; }
 
-    /// <summary>The selected Action, or null to show <see cref="Current"/>.</summary>
-    [Parameter] public ActionEntry? Action { get; set; }
+    /// <summary>The selected Action or Resync, or null to show <see cref="Current"/>.</summary>
+    [Parameter] public HistoryEntry? Entry { get; set; }
 
     /// <summary>The selected Feature's expand/collapse choices, kept by the caller across Actions and Sessions.</summary>
     [Parameter, EditorRequired] public Dictionary<string, bool> Toggles { get; set; } = [];

@@ -8,6 +8,9 @@
     case FeatureDiff.NoAction:
         <p class="muted" data-test="diff-message">Select an Action to see what it changed</p>
         break;
+    case FeatureDiff.Unavailable:
+        <p class="muted" data-test="diff-message">History was lost before this point; diff unavailable</p>
+        break;
     case FeatureDiff.Missing:
         <p class="muted" data-test="diff-message">@Feature didn't exist at this point</p>
         break;
@@ -56,8 +59,10 @@
     /// <summary>The selected Feature's name; the pane shows nothing without one.</summary>
     [Parameter] public string? Feature { get; set; }
 
-    /// <summary>The selected Action, or null when none is.</summary>
-    [Parameter] public ActionEntry? Action { get; set; }
+    /// <summary>The selected Action or Resync, or null when none is.</summary>
+    [Parameter] public HistoryEntry? Entry { get; set; }
+
+    private ActionEntry? Action => Entry as ActionEntry;
 
     /// <summary>Whether unchanged values show; kept by the caller for the Viewer tab.</summary>
     [Parameter] public bool ShowUnchanged { get; set; }
@@ -77,7 +82,7 @@
 
     protected override void OnParametersSet()
     {
-        diff = Feature is null ? null : FeatureDiff.For(Action, Feature);
+        diff = Feature is null ? null : FeatureDiff.For(Entry, Feature);
         stateType = Feature is null ? null : (Action?.After.GetValueOrDefault(Feature) ?? Action?.Before.GetValueOrDefault(Feature))?.StateType;
         if (diff is not FeatureDiff.Changes)
             rendered = default;

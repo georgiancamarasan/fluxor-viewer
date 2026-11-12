@@ -2,6 +2,10 @@
 // them. For checking the Viewer under load by hand (bursts, follow mode) without a real Fluxor app.
 //
 //   node fake-session.mjs [--url http://localhost:5299] [--actions 5000] [--batch 1] [--delay 0] [--app FakeApp]
+//                         [--resync-every 0]
+//
+// --resync-every N drops 3 Actions after every N sent and reports them in a Snapshot, as the middleware does when its
+// buffer overflows, so the Viewer records a Resync.
 //
 // Speaks SignalR's JSON protocol over a WebSocket directly, so it needs nothing beyond Node 22+.
 
@@ -15,11 +19,14 @@ const { values: opts } = parseArgs({
     batch: { type: "string", default: "1" },
     delay: { type: "string", default: "0" },
     app: { type: "string", default: "FakeApp" },
+    "resync-every": { type: "string", default: "0" },
   },
 });
 const total = Number(opts.actions);
 const batchSize = Number(opts.batch);
 const delay = Number(opts.delay);
+const resyncEvery = Number(opts["resync-every"]);
+const dropped = 3;
 const RS = "\x1e"; // SignalR record separator
 
 const hub = new URL("/hub/ingest", opts.url);
@@ -64,23 +71,30 @@ function invoke(target, ...args) {
 }
 
 const sessionId = randomUUID();
+const startedAt = new Date().toISOString();
 const counter = (count) => ({ name: "Counter", stateType: "Fake.CounterState", stateJson: JSON.stringify({ count }) });
-await invoke("Snapshot", {
+const snapshot = (lastSequence, droppedCount) => invoke("Snapshot", {
   protocolVersion: { major: 1, minor: 0 },
   sessionId,
   appName: opts.app,
   runtime: "Server",
-  startedAt: new Date().toISOString(),
-  lastSequence: 0,
-  droppedCount: 0,
-  features: [counter(0)],
+  startedAt,
+  lastSequence,
+  droppedCount,
+  features: [counter(lastSequence)],
 });
+await snapshot(0, 0);
 console.log(`Session ${sessionId.slice(0, 4)} (${opts.app}): sending ${total} Actions in batches of ${batchSize}…`);
 
 const started = performance.now();
+let sent = 0;
 for (let sequence = 1; sequence <= total; ) {
   const batch = [];
-  for (; batch.length < batchSize && sequence <= total; sequence++)
+  for (; batch.length < batchSize && sequence <= total; sequence++, sent++) {
+    if (resyncEvery > 0 && sent > 0 && sent % resyncEvery === 0 && batch.length === 0) {
+      sequence += dropped;
+      await snapshot(sequence - 1, dropped);
+    }
     batch.push({
       sessionId,
       sequence,
@@ -89,6 +103,7 @@ for (let sequence = 1; sequence <= total; ) {
       actionJson: JSON.stringify({ amount: 1 }),
       changedFeatures: [counter(sequence)],
     });
+  }
   await invoke("Actions", batch);
   if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
 }
