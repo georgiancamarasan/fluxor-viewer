@@ -1,0 +1,28 @@
+<label class="flex items-center gap-2" data-test="feature-picker">
+    <span class="toolbar-label">Feature</span>
+    <select class="control" value="@Selected" @onchange="OnChange" disabled="@(Features.Count == 0)">
+        @if (HasSession && Features.Count == 0)
+        {
+            <option value="" selected>No Features</option>
+        }
+        @foreach (var feature in Features)
+        {
+            <option value="@feature">@feature</option>
+        }
+    </select>
+</label>
+
+@code {
+    /// <summary>The selected Session's Feature names, already in display order.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<string> Features { get; set; } = [];
+
+    /// <summary>Whether a Session is selected, which tells "no Features" apart from "nothing to show".</summary>
+    [Parameter] public bool HasSession { get; set; }
+
+    [Parameter] public string? Selected { get; set; }
+
+    [Parameter] public EventCallback<string> SelectedChanged { get; set; }
+
+    private Task OnChange(ChangeEventArgs e) =>
+        e.Value is string { Length: > 0 } name ? SelectedChanged.InvokeAsync(name) : Task.CompletedTask;
+}

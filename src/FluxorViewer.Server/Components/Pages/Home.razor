@@ -7,10 +7,8 @@
 <div class="flex h-screen flex-col">
     <header class="flex flex-wrap items-center gap-4 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
         <SessionPicker Sessions="sessions" Selected="selection.Selected" SelectedChanged="Select" />
-        <label class="flex items-center gap-2" data-test="feature-picker">
-            <span class="toolbar-label">Feature</span>
-            <select class="control" disabled></select>
-        </label>
+        <FeaturePicker Features="features.Features" HasSession="selection.Selected is not null"
+                       Selected="@features.Selected" SelectedChanged="SelectFeature" />
         <button class="control" disabled data-test="clear">Clear</button>
     </header>
 
@@ -33,6 +31,7 @@
 
 @code {
     private readonly SessionSelection selection = new();
+    private readonly FeatureSelection features = new();
     private IReadOnlyList<ReceivedSession> sessions = [];
 
     protected override void OnInitialized()
@@ -43,11 +42,12 @@
 
     private void OnChanged(SessionChange change)
     {
-        // Actions are UI-7's concern; the picker only cares about Sessions coming, going and (dis)connecting.
-        if (change is EntriesAppended)
-            return;
         _ = InvokeAsync(() =>
         {
+            // Actions in other Sessions don't matter here. For the selected one they're re-read: a Snapshot for a
+            // still-connected Session raises no change of its own, and may have brought a different set of Features.
+            if (change is EntriesAppended && change.SessionId != selection.Selected)
+                return;
             Refresh();
             StateHasChanged();
         });
@@ -57,13 +57,20 @@
     {
         sessions = Registry.GetSessions();
         selection.Update(sessions);
+        UpdateFeatures();
     }
 
     private void Select(Guid sessionId)
     {
         selection.Select(sessionId);
         selection.Update(sessions);
+        UpdateFeatures();
     }
+
+    private void SelectFeature(string featureName) => features.Select(featureName);
+
+    private void UpdateFeatures() =>
+        features.Update(sessions.FirstOrDefault(s => s.SessionId == selection.Selected)?.Current.Keys ?? []);
 
     public void Dispose() => Registry.Changed -= OnChanged;
 }

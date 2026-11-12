@@ -7,16 +7,16 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FluxorViewer.Server.Tests;
 
-// UI-1: the layout shell and Session picker, against a real registry.
+// UI-1 and UI-2: the layout shell, Session picker and Feature picker, against a real registry.
 public class HomePageTests : BunitContext
 {
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance);
 
     public HomePageTests() => Services.AddSingleton(registry);
 
-    private static Snapshot NewSnapshot(Guid sessionId, string appName = "MyApp", Runtime runtime = Runtime.WebAssembly) => new(
+    private static Snapshot NewSnapshot(Guid sessionId, string appName = "MyApp", Runtime runtime = Runtime.WebAssembly, params string[] features) => new(
         ProtocolVersion.Current, sessionId, appName, runtime, DateTimeOffset.UtcNow, 0, 0,
-        [new FeatureState("Counter", "App.CounterState", """{"Count":0}""")]);
+        [.. (features is [] ? ["Counter"] : features).Select(f => new FeatureState(f, $"App.{f}State", "{}"))]);
 
     private static Guid Id(string prefix) => Guid.Parse(prefix + "00000000-0000-0000-0000-000000000000"[prefix.Length..]);
 
@@ -125,7 +125,95 @@ public class HomePageTests : BunitContext
 
         var page = Render<Home>();
 
-        Assert.True(page.Find("[data-test=feature-picker] select").HasAttribute("disabled"));
         Assert.True(page.Find("[data-test=clear]").HasAttribute("disabled"));
+    }
+
+    private string[] Features(IRenderedComponent<Home> page) =>
+        [.. page.FindAll("[data-test=feature-picker] option").Select(o => o.TextContent.Trim())];
+
+    private string? SelectedFeature(IRenderedComponent<Home> page) =>
+        page.Find("[data-test=feature-picker] select").GetAttribute("value");
+
+    [Fact]
+    public void The_selected_Sessions_Features_are_listed_alphabetically_with_the_first_selected()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Weather", "auth", "Counter"]));
+
+        var page = Render<Home>();
+
+        Assert.Equal(["auth", "Counter", "Weather"], Features(page));
+        Assert.Equal("auth", SelectedFeature(page));
+        Assert.False(page.Find("[data-test=feature-picker] select").HasAttribute("disabled"));
+    }
+
+    [Fact]
+    public void Without_a_selected_Session_the_Feature_picker_is_disabled_and_empty()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Guid.NewGuid()));
+        registry.SnapshotReceived("c2", NewSnapshot(Guid.NewGuid(), "Other"));
+
+        var page = Render<Home>();
+
+        Assert.True(page.Find("[data-test=feature-picker] select").HasAttribute("disabled"));
+        Assert.Empty(Features(page));
+    }
+
+    [Fact]
+    public void A_Session_without_Features_says_so()
+    {
+        registry.SnapshotReceived("c1", new Snapshot(
+            ProtocolVersion.Current, Guid.NewGuid(), "MyApp", Runtime.Server, DateTimeOffset.UtcNow, 0, 0, []));
+
+        var page = Render<Home>();
+
+        Assert.True(page.Find("[data-test=feature-picker] select").HasAttribute("disabled"));
+        Assert.Equal(["No Features"], Features(page));
+    }
+
+    [Fact]
+    public void The_picked_Feature_is_kept_across_Sessions_that_have_it()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Auth", "Counter"]));
+        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other", features: ["Basket"]));
+        registry.SnapshotReceived("c3", NewSnapshot(Id("cccc"), "Third", features: ["Counter", "Weather"]));
+        var page = Render<Home>();
+        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+
+        page.Find("[data-test=feature-picker] select").Change("Counter");
+        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        Assert.Equal("Basket", SelectedFeature(page));
+
+        page.Find("[data-test=session-picker] select").Change(Id("cccc").ToString());
+        Assert.Equal("Counter", SelectedFeature(page));
+    }
+
+    [Fact]
+    public void A_reloaded_app_keeps_the_picked_Feature()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Auth", "Counter"]));
+        var page = Render<Home>();
+        page.Find("[data-test=feature-picker] select").Change("Counter");
+
+        registry.ConnectionClosed("c1");
+        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), features: ["Auth", "Counter"]));
+
+        page.WaitForAssertion(() =>
+        {
+            Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker] select").GetAttribute("value"));
+            Assert.Equal("Counter", SelectedFeature(page));
+        });
+    }
+
+    [Fact]
+    public void A_Snapshot_that_changes_the_Features_of_a_connected_Session_updates_the_picker()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
+        var page = Render<Home>();
+
+        // A resync on the same connection raises no Session change; the next Actions batch does.
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter", "Auth"]));
+        registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, DateTimeOffset.UtcNow, "App.Tick", "{}", [])]);
+
+        page.WaitForAssertion(() => Assert.Equal(["Auth", "Counter"], Features(page)));
     }
 }
