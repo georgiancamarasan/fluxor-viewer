@@ -38,35 +38,33 @@ public class SendingTests
         var actions = await Harness.ActionsSent(connection, 250);
 
         Assert.Equal(Enumerable.Range(2, 250).Select(i => (long)i), actions.Select(a => a.Sequence));
-        Assert.Equal([1, 100, 100, 49], connection.Batches.Select(b => b.Count));
+        Assert.Equal([1, 100, 100, 49], connection.Batches.Skip(1).Select(b => b.Count)); // After StoreInitializedAction's.
     }
 
     [Fact]
-    public async Task Overflow_is_followed_by_a_Snapshot_with_the_dropped_count()
+    public async Task Overflow_drops_the_oldest_Actions_and_resyncs_from_the_state_before_the_rest()
     {
         await using var harness = new Harness(bufferSize: 10);
         var (connection, first) = await harness.StartConnected();
         var gate = await StallSender(harness, connection); // Sequence 2 in flight.
 
-        for (var i = 0; i < 49; i++) // 3..12 fill the buffer; 13..51 are dropped.
+        for (var i = 0; i < 49; i++) // 3..51: the buffer keeps the newest 10 (42..51); 3..41 are dropped.
             harness.Dispatcher.Dispatch(new IncrementAction());
         gate.SetResult();
-        await Wait.Until(() => connection.Sent.OfType<Snapshot>().Count() == 2);
-        harness.Dispatcher.Dispatch(new IncrementAction());
-        await Wait.Until(() => connection.Sent.LastOrDefault() is ActionRecorded { Sequence: 52 });
+        await Wait.Until(() => connection.Sent.LastOrDefault() is ActionRecorded { Sequence: 51 });
 
-        // Sent: Snapshot, Actions 2..12, Snapshot (LastSequence 51, 39 dropped), Action 52.
+        // Sent: Snapshot, Actions 1..2, Snapshot (LastSequence 41, 39 dropped), Actions 42..51.
         var sent = connection.Sent.ToList();
         var resync = Assert.IsType<Snapshot>(sent.Single(m => m is Snapshot && !ReferenceEquals(m, first)));
         var before = sent.TakeWhile(m => !ReferenceEquals(m, resync)).OfType<ActionRecorded>().Select(a => a.Sequence).ToList();
         var after = sent.SkipWhile(m => !ReferenceEquals(m, resync)).OfType<ActionRecorded>().Select(a => a.Sequence).ToList();
 
         Assert.Same(first, sent[0]);
-        Assert.Equal(Enumerable.Range(2, 11).Select(i => (long)i), before);
-        Assert.Equal(51, resync.LastSequence);
+        Assert.Equal([1L, 2L], before);
+        Assert.Equal(41, resync.LastSequence);
         Assert.Equal(39, resync.DroppedCount);
-        Assert.Equal(50, Count(resync));
-        Assert.Equal([52L], after);
+        Assert.Equal(40, Count(resync));
+        Assert.Equal(Enumerable.Range(42, 10).Select(i => (long)i), after);
         Assert.Equal(first.SessionId, resync.SessionId);
     }
 
@@ -78,7 +76,7 @@ public class SendingTests
 
         for (var round = 1; round <= 2; round++)
         {
-            // Each round: 1 in flight, 5 queued, 14 dropped.
+            // Each round: 1 in flight, then 19 more of which the oldest 14 are dropped and the newest 5 kept.
             var gate = await StallSender(harness, connection);
             for (var i = 0; i < 19; i++)
                 harness.Dispatcher.Dispatch(new IncrementAction());
@@ -89,8 +87,8 @@ public class SendingTests
 
         var snapshots = connection.Sent.OfType<Snapshot>().ToList();
         Assert.Equal([0L, 14L, 14L], snapshots.Select(s => s.DroppedCount));
-        Assert.Equal([1L, 21L, 41L], snapshots.Select(s => s.LastSequence));
-        Assert.Equal(12, connection.Actions.Count);
+        Assert.Equal([0L, 16L, 36L], snapshots.Select(s => s.LastSequence));
+        Assert.Equal(13, connection.Actions.Count); // StoreInitializedAction, then 1 + 5 per round.
     }
 
     [Fact]

@@ -14,9 +14,14 @@ namespace FluxorViewer.Server.Tests;
 /// <summary>The real Viewer on real Kestrel (a free port), so tests use the same WebSocket path as the middleware.</summary>
 public sealed class Viewer : WebApplicationFactory<Program>
 {
-    public Viewer()
+    public Viewer() : this(0)
     {
-        UseKestrel(0);
+    }
+
+    /// <summary>A Viewer on <paramref name="port"/>, e.g. the port of one that was stopped, to restart it.</summary>
+    internal Viewer(int port)
+    {
+        UseKestrel(port);
         StartServer();
         BaseAddress = new Uri(Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First());
     }

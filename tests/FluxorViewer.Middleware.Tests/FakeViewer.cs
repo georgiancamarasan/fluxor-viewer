@@ -13,7 +13,8 @@ internal sealed class FakeViewer : IViewerConnectionFactory
     /// <summary>Completes connects only when released; until then StartAsync waits.</summary>
     public TaskCompletionSource ConnectGate { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public Exception? ConnectFailure { get; init; }
+    /// <summary>When set, connecting throws this: the Viewer is down.</summary>
+    public Exception? ConnectFailure { get; set; }
 
     /// <summary>When set, sending a Snapshot throws this.</summary>
     public Exception? SnapshotFailure { get; set; }
@@ -53,6 +54,12 @@ internal sealed class FakeViewer : IViewerConnectionFactory
     {
         private readonly TaskCompletionSource<object> firstMessage = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource disposed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Closed => closed.Task;
+
+        /// <summary>The connection closes from the Viewer's side, as when the Viewer stops.</summary>
+        public void Close() => closed.TrySetResult();
 
         public Uri ServerUrl { get; } = serverUrl;
 

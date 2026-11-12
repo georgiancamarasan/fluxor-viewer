@@ -111,7 +111,7 @@ public class SessionStartTests
     }
 
     [Fact]
-    public async Task Snapshot_is_captured_when_the_connection_opens()
+    public async Task The_first_Snapshot_is_the_initial_state_even_if_Actions_came_before_the_connect()
     {
         var viewer = new FakeViewer(connectImmediately: false);
         await using var provider = Provider(viewer);
@@ -122,7 +122,8 @@ public class SessionStartTests
         var snapshot = await FirstSnapshot(viewer);
 
         var counter = Assert.Single(snapshot.Features, f => f.Name == "Counter");
-        Assert.Equal(1, JsonDocument.Parse(counter.StateJson).RootElement.GetProperty("Count").GetInt32());
+        Assert.Equal(0, JsonDocument.Parse(counter.StateJson).RootElement.GetProperty("Count").GetInt32());
+        Assert.Equal(0, snapshot.LastSequence);
     }
 
     [Fact]

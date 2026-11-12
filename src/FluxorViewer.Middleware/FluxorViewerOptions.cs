@@ -15,8 +15,8 @@ public sealed class FluxorViewerOptions
     public string AppName { get; set; } = Assembly.GetEntryAssembly()?.GetName().Name ?? "Unknown";
 
     /// <summary>
-    /// Maximum number of Actions waiting to be sent; beyond this they're dropped and the Viewer shows a Resync.
-    /// Must be at least 1.
+    /// Maximum number of Actions waiting to be sent, while connected or not (e.g. before the Viewer is started);
+    /// beyond this the oldest are dropped and the Viewer shows a Resync. Must be at least 1.
     /// </summary>
     public int BufferSize { get; set; } = 1000;
 

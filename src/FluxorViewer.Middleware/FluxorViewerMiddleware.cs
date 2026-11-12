@@ -9,7 +9,8 @@ namespace FluxorViewer.Middleware;
 internal sealed class FluxorViewerMiddleware(
     FluxorViewerOptions options,
     IViewerConnectionFactory connectionFactory,
-    ILoggerFactory? loggerFactory = null)
+    ILoggerFactory? loggerFactory = null,
+    TimeProvider? time = null)
     : Fluxor.Middleware, IAsyncDisposable, IDisposable
 {
     internal FluxorViewerOptions Options { get; } = options;
@@ -17,7 +18,8 @@ internal sealed class FluxorViewerMiddleware(
     internal SessionReporter Reporter { get; } = new(
         options,
         connectionFactory,
-        (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<FluxorViewerMiddleware>());
+        (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<FluxorViewerMiddleware>(),
+        time ?? TimeProvider.System);
 
     public override Task InitializeAsync(IDispatcher dispatcher, IStore store)
     {

@@ -3,6 +3,7 @@
   <ItemGroup>
     <PackageReference Include="Fluxor" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
 
   <ItemGroup>

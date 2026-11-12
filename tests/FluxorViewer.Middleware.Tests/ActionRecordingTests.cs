@@ -75,21 +75,10 @@ public class ActionRecordingTests
     {
         await using var harness = new Harness();
 
-        var (_, snapshot) = await harness.StartConnected();
+        var (connection, snapshot) = await harness.StartConnected();
 
-        Assert.Equal(1, snapshot.LastSequence); // StoreInitializedAction.
-    }
-
-    [Fact]
-    public async Task Fluxor_internal_Actions_are_reported_once_connected()
-    {
-        // A connection that opens synchronously is connected before Fluxor dispatches StoreInitializedAction.
-        await using var harness = new Harness(connectImmediately: true);
-        var connection = await harness.Start();
-
-        var action = Assert.Single(await Harness.ActionsSent(connection, 1));
-
-        Assert.Equal(0, Assert.IsType<Snapshot>(connection.Sent.First()).LastSequence);
+        Assert.Equal(0, snapshot.LastSequence);
+        var action = Assert.Single(connection.Actions);
         Assert.Equal("Fluxor.StoreInitializedAction", action.ActionType);
         Assert.Equal(1, action.Sequence);
     }
@@ -106,13 +95,14 @@ public class ActionRecordingTests
         var snapshot = Assert.IsType<Snapshot>(await connection.FirstMessage.WaitAsync(Wait.Timeout, Ct));
         for (var i = 0; i < 3; i++)
             harness.Dispatcher.Dispatch(new IncrementAction());
-        var actions = await Harness.ActionsSent(connection, 3);
+        await Harness.ActionsSent(connection, 5);
 
-        Assert.Equal(3, snapshot.LastSequence); // StoreInitializedAction + 2 increments, all covered by the Snapshot.
-        Assert.Equal(2, Count(Assert.Single(snapshot.Features, f => f.Name == "Counter")));
+        // Buffered before the connect: StoreInitializedAction and 2 increments, sent after the Snapshot.
+        Assert.Equal(0, snapshot.LastSequence);
+        Assert.Equal(0, Count(Assert.Single(snapshot.Features, f => f.Name == "Counter")));
         Assert.IsType<Snapshot>(connection.Sent.First());
-        Assert.Equal([4L, 5L, 6L], actions.Select(a => a.Sequence));
-        Assert.Equal([3, 4, 5], actions.Select(a => Count(Assert.Single(a.ChangedFeatures))));
+        Assert.Equal([1L, 2L, 3L, 4L, 5L, 6L], connection.Actions.Select(a => a.Sequence));
+        Assert.Equal([1, 2, 3, 4, 5], connection.Actions.Skip(1).Select(a => Count(Assert.Single(a.ChangedFeatures))));
     }
 
     [Fact]
@@ -140,24 +130,6 @@ public class ActionRecordingTests
 
         var action = Assert.Single(await Harness.ActionsSent(connection, 1));
         Assert.Equal("FluxorViewer.Middleware.Tests.Items.LoadedAction<FluxorViewer.Middleware.Tests.Item>", action.ActionType);
-    }
-
-    [Fact]
-    public async Task After_a_failed_send_the_Session_stops_reporting()
-    {
-        await using var harness = new Harness();
-        var (connection, _) = await harness.StartConnected();
-        harness.Viewer.ActionsFailure = new HttpRequestException("Gone");
-
-        harness.Dispatcher.Dispatch(new IncrementAction());
-        await Wait.Until(() => harness.Logs.Entries.Any(e => e.Exception is HttpRequestException));
-        harness.Viewer.ActionsFailure = null;
-        harness.Dispatcher.Dispatch(new IncrementAction());
-        await Task.Delay(100, Ct);
-
-        Assert.Empty(connection.Actions);
-        Assert.Equal(LogLevel.Debug, harness.Logs.Entries.Single(e => e.Exception is HttpRequestException).Level);
-        Assert.Equal(2, harness.Get<IState<CounterState>>().Value.Count);
     }
 
     [Fact]
