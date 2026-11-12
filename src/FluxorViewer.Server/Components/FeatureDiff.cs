@@ -23,8 +23,8 @@ public abstract record FeatureDiff
     public sealed record Identical : FeatureDiff;
 
     /// <summary>The state on one side couldn't be serialised.</summary>
-    /// <param name="Side">"before" or "after"; "after" when both failed.</param>
-    public sealed record Error(string Side, string Message) : FeatureDiff;
+    /// <param name="Side">Which side; <see cref="DiffSide.After"/> when both failed.</param>
+    public sealed record Error(DiffSide Side, string Message) : FeatureDiff;
 
     /// <summary>The JSON differs: the browser diffs it.</summary>
     /// <param name="Before">The state before the Action, or null when the Feature didn't exist yet (all of it is added).</param>
@@ -44,11 +44,21 @@ public abstract record FeatureDiff
 
         var before = action.Before.GetValueOrDefault(feature);
         if (SerialisationError.In(after.StateJson) is { } afterError)
-            return new Error("after", afterError);
+            return new Error(DiffSide.After, afterError);
         if (before is not null && SerialisationError.In(before.StateJson) is { } beforeError)
-            return new Error("before", beforeError);
+            return new Error(DiffSide.Before, beforeError);
         if (before is not null && string.Equals(before.StateJson, after.StateJson, StringComparison.Ordinal))
             return new Identical();
         return new Changes(before?.StateJson, after.StateJson);
     }
+}
+
+/// <summary>Either side of an Action's before → after.</summary>
+public enum DiffSide
+{
+    /// <summary>The state before the Action.</summary>
+    Before,
+
+    /// <summary>The state after the Action.</summary>
+    After,
 }

@@ -40,7 +40,7 @@
                     break;
                 case FeatureDiff.Error error:
                     <p class="rounded-md border border-red-300 bg-red-50 px-3 py-2 font-mono text-sm text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
-                       data-test="diff-error">Couldn't serialise @Feature @error.Side this Action: @error.Message</p>
+                       data-test="diff-error">Couldn't serialise @Feature @(error.Side == DiffSide.Before ? "before" : "after") this Action: @error.Message</p>
                     break;
                 case FeatureDiff.Changes when unreadable is not null:
                     <p class="state-error" data-test="diff-error">Couldn't diff @Feature at this Action: @unreadable</p>

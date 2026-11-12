@@ -54,10 +54,10 @@ public class FeatureDiffTests
     }
 
     [Theory]
-    [InlineData("""{"$error":"Cycle"}""", """{"n":1}""", "before")]
-    [InlineData("""{"n":1}""", """{"$error":"Cycle"}""", "after")]
-    [InlineData("""{"$error":"Cycle"}""", """{"$error":"Cycle"}""", "after")]
-    public void A_side_that_failed_to_serialise_is_an_error_instead_of_a_diff(string before, string after, string side) =>
+    [InlineData("""{"$error":"Cycle"}""", """{"n":1}""", DiffSide.Before)]
+    [InlineData("""{"n":1}""", """{"$error":"Cycle"}""", DiffSide.After)]
+    [InlineData("""{"$error":"Cycle"}""", """{"$error":"Cycle"}""", DiffSide.After)]
+    public void A_side_that_failed_to_serialise_is_an_error_instead_of_a_diff(string before, string after, DiffSide side) =>
         Assert.Equal(new FeatureDiff.Error(side, "Cycle"), FeatureDiff.For(Action(Map(("Counter", before)), Map(("Counter", after)), "Counter"), "Counter"));
 
     [Fact]
