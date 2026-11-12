@@ -75,7 +75,7 @@
     private FeatureDiff? diff;
     private string? stateType;
     private ElementReference host;
-    private IJSObjectReference? module;
+    private CollocatedModule module = default!;
 
     // What the browser last diffed; it diffs again only when one of these changes, not on every render.
     private (ActionEntry? Action, string? Feature, bool ShowUnchanged) rendered;
@@ -85,6 +85,8 @@
 
     // Why the browser couldn't diff the JSON last requested (e.g. it isn't valid JSON); null when it could.
     private string? unreadable;
+
+    protected override void OnInitialized() => module = new(JS, "./Components/DiffPane.razor.js");
 
     protected override void OnParametersSet()
     {
@@ -125,7 +127,6 @@
     {
         try
         {
-            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/DiffPane.razor.js");
             return (await module.InvokeAsync<bool>("render", host, changes.Before, changes.After, ShowUnchanged), null);
         }
         catch (JSException ex)
@@ -140,16 +141,6 @@
 
     private Task OnShowUnchanged(ChangeEventArgs change) => ShowUnchangedChanged.InvokeAsync(change.Value is true);
 
-    public async ValueTask DisposeAsync()
-    {
-        try
-        {
-            if (module is not null)
-                await module.DisposeAsync();
-        }
-        catch (JSDisconnectedException)
-        {
-            // The circuit is gone, and the module with it.
-        }
-    }
+    /// <summary>Releases the component's JS module.</summary>
+    public ValueTask DisposeAsync() => module.DisposeAsync();
 }

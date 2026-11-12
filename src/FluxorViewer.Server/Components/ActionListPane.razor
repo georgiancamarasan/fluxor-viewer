@@ -89,10 +89,12 @@ else if (List.VisibleActionCount == 0)
     [Parameter] public EventCallback SelectedChanged { get; set; }
 
     private ElementReference scroller;
-    private IJSObjectReference? module;
+    private CollocatedModule module = default!;
 
     // The newest row the list last scrolled to while following; null while paused, so resuming scrolls again.
     private HistoryEntry? scrolledTo;
+
+    protected override void OnInitialized() => module = new(JS, "./Components/ActionListPane.razor.js");
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -102,22 +104,11 @@ else if (List.VisibleActionCount == 0)
         scrolledTo = newest;
         if (newest is null)
             return;
-        module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/ActionListPane.razor.js");
         await module.InvokeVoidAsync("scrollToBottom", scroller);
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        try
-        {
-            if (module is not null)
-                await module.DisposeAsync();
-        }
-        catch (JSDisconnectedException)
-        {
-            // The circuit is gone, and the module with it.
-        }
-    }
+    /// <summary>Releases the component's JS module.</summary>
+    public ValueTask DisposeAsync() => module.DisposeAsync();
 
     // Each of these may move the selection (Follow mode keeps the newest visible row), so the right pane re-renders too.
     private Task OnFilter(ChangeEventArgs change)
