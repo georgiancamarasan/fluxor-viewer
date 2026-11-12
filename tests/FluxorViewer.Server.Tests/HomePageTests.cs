@@ -474,6 +474,25 @@ public class HomePageTests : BunitContext
     }
 
     [Fact]
+    public void While_following_the_right_pane_moves_with_the_selection_when_the_filter_or_toggle_changes()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Auth", "Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        Dispatch("c1", Id("aaaa"), 2, "App.Login", "Auth");
+        var page = Render<Home>();
+        page.Find("[data-test=feature-picker] select").Change("Counter");
+
+        page.Find("[data-test=changed-only]").Change(true);
+        Assert.Equal("CounterState · after #1 Increment", Header(page));
+
+        page.Find("[data-test=action-filter]").Input("nothing");
+        Assert.Equal("CounterState · current", Header(page));
+
+        page.Find("[data-test=show-all]").Click();
+        Assert.Equal("CounterState · after #2 Login", Header(page));
+    }
+
+    [Fact]
     public void A_Feature_missing_at_the_selected_Action_says_it_did_not_exist_then()
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));

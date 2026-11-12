@@ -82,7 +82,10 @@ else if (List.VisibleActionCount == 0)
     /// <summary>The History limit, once the Session has discarded older entries to stay within it; otherwise null.</summary>
     [Parameter] public HistoryLimit? DiscardedBeyond { get; set; }
 
-    /// <summary>Raised when the developer selects an Action, after <see cref="List"/> has recorded it.</summary>
+    /// <summary>
+    /// Raised after <see cref="List"/>'s selection may have changed: the developer selected a row or resumed Follow mode,
+    /// or changed the filter or toggle while following.
+    /// </summary>
     [Parameter] public EventCallback SelectedChanged { get; set; }
 
     private ElementReference scroller;
@@ -116,19 +119,26 @@ else if (List.VisibleActionCount == 0)
         }
     }
 
-    private void OnFilter(ChangeEventArgs e)
+    // Each of these may move the selection (Follow mode keeps the newest visible row), so the right pane re-renders too.
+    private Task OnFilter(ChangeEventArgs change)
     {
-        List.Filter = e.Value as string ?? "";
+        List.Filter = change.Value as string ?? "";
         List.Refilter();
+        return SelectedChanged.InvokeAsync();
     }
 
-    private void OnChangedOnly(ChangeEventArgs e)
+    private Task OnChangedOnly(ChangeEventArgs change)
     {
-        List.ChangedOnly = e.Value is true;
+        List.ChangedOnly = change.Value is true;
         List.Refilter();
+        return SelectedChanged.InvokeAsync();
     }
 
-    private void ShowAll() => List.ShowAll();
+    private Task ShowAll()
+    {
+        List.ShowAll();
+        return SelectedChanged.InvokeAsync();
+    }
 
     private Task Resume()
     {
