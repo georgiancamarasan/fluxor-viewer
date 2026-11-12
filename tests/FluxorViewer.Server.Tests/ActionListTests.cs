@@ -203,6 +203,19 @@ public class ActionListTests
     }
 
     [Fact]
+    public void Selecting_another_older_row_while_paused_keeps_counting_from_when_it_paused()
+    {
+        var id = Guid.NewGuid();
+        list.Update(Session(id, Action(1), Action(2), Action(3)), null);
+        list.Select(2);
+        list.Update(Session(id, Action(1), Action(2), Action(3), Action(4), Action(5)), null);
+
+        list.Select(1);
+
+        Assert.Equal(2, list.NewCount);
+    }
+
+    [Fact]
     public void Only_visible_new_Actions_are_counted()
     {
         var id = Guid.NewGuid();

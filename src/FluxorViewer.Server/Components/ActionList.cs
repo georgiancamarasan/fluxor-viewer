@@ -95,9 +95,11 @@ public sealed class ActionList
     {
         if (Find(id) is not { } entry)
             return;
+        var wasFollowing = Following;
         Selected = entry;
         Following = Rows is [.., var newest] && newest.Entry.Id == id;
-        pausedAt = entries[^1].Id;
+        if (wasFollowing && !Following)
+            pausedAt = entries[^1].Id;
         Refilter();
     }
 
