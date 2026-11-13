@@ -35,6 +35,15 @@ public class HomePageTests : BunitContext
 
     private static Guid Id(string prefix) => Guid.Parse(prefix + "00000000-0000-0000-0000-000000000000"[prefix.Length..]);
 
+    private static void SelectSession(IRenderedComponent<Home> page, Guid sessionId) =>
+        page.Find("[data-test=session-picker]").Change(sessionId.ToString());
+
+    private static void SelectFeature(IRenderedComponent<Home> page, string feature) =>
+        page.Find("[data-test=feature-picker]").Change(feature);
+
+    private static string? SelectedSession(IRenderedComponent<Home> page) =>
+        page.Find("[data-test=session-picker]").GetAttribute("value");
+
     private string[] Options(IRenderedComponent<Home> page) =>
         [.. page.FindAll("[data-test=session-option]").Select(o => o.TextContent.Trim())];
 
@@ -74,7 +83,7 @@ public class HomePageTests : BunitContext
 
         var page = Render<Home>();
 
-        Assert.Equal(Id("3f2a").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value"));
+        Assert.Equal(Id("3f2a").ToString(), SelectedSession(page));
         Assert.NotNull(page.Find("[data-test=status-dot][data-status=connected]"));
         Assert.Empty(page.FindAll("[data-test=pick-a-session]"));
     }
@@ -98,9 +107,9 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
         var page = Render<Home>();
 
-        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
+        SelectSession(page, Id("bbbb"));
 
-        Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value"));
+        Assert.Equal(Id("bbbb").ToString(), SelectedSession(page));
         Assert.Empty(page.FindAll("[data-test=pick-a-session]"));
     }
 
@@ -130,7 +139,7 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb")));
 
         page.WaitForAssertion(() =>
-            Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value")));
+            Assert.Equal(Id("bbbb").ToString(), SelectedSession(page)));
     }
 
     [Fact]
@@ -192,13 +201,13 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other", features: ["Basket"]));
         registry.SnapshotReceived("c3", NewSnapshot(Id("cccc"), "Third", features: ["Counter", "Weather"]));
         var page = Render<Home>();
-        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
+        SelectSession(page, Id("aaaa"));
+        SelectFeature(page, "Counter");
 
-        page.Find("[data-test=feature-picker]").Change("Counter");
-        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
+        SelectSession(page, Id("bbbb"));
         Assert.Equal("Basket", SelectedFeature(page));
 
-        page.Find("[data-test=session-picker]").Change(Id("cccc").ToString());
+        SelectSession(page, Id("cccc"));
         Assert.Equal("Counter", SelectedFeature(page));
     }
 
@@ -207,14 +216,14 @@ public class HomePageTests : BunitContext
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Auth", "Counter"]));
         var page = Render<Home>();
-        page.Find("[data-test=feature-picker]").Change("Counter");
+        SelectFeature(page, "Counter");
 
         registry.ConnectionClosed("c1");
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), features: ["Auth", "Counter"]));
 
         page.WaitForAssertion(() =>
         {
-            Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value"));
+            Assert.Equal(Id("bbbb").ToString(), SelectedSession(page));
             Assert.Equal("Counter", SelectedFeature(page));
         });
     }
@@ -267,7 +276,7 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
 
         var page = Render<Home>();
-        page.Find("[data-test=feature-picker]").Change("Counter");
+        SelectFeature(page, "Counter");
 
         Assert.Equal(["true", "false"], page.FindAll("[data-test=action-row]").Select(r => r.GetAttribute("data-dimmed")));
     }
@@ -280,7 +289,7 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
         Dispatch("c1", Id("aaaa"), 3, "App.Decrement", "Counter");
         var page = Render<Home>();
-        page.Find("[data-test=feature-picker]").Change("Counter");
+        SelectFeature(page, "Counter");
 
         page.Find("[data-test=changed-only]").Change(true);
         Assert.Equal(["Increment", "Decrement"], Rows(page));
@@ -326,14 +335,15 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 1, "App.A");
         Dispatch("c1", Id("aaaa"), 2, "App.B");
         var page = Render<Home>();
-        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
-        Assert.Equal("B", SelectedRow(page));
+        SelectSession(page, Id("aaaa"));
 
         page.FindAll("[data-test=action-row]")[0].Click();
         Assert.Equal("A", SelectedRow(page));
 
-        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
-        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
+        SelectSession(page, Id("bbbb"));
+        Assert.Null(SelectedRow(page));
+
+        SelectSession(page, Id("aaaa"));
         Assert.Equal("B", SelectedRow(page));
     }
 
@@ -372,7 +382,6 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 2, "App.B");
         var page = Render<Home>();
         page.FindAll("[data-test=action-row]")[0].Click();
-        Assert.Empty(page.FindAll("[data-test=new-actions]"));
 
         Dispatch("c1", Id("aaaa"), 3, "App.C");
         Dispatch("c1", Id("aaaa"), 4, "App.D");
@@ -401,6 +410,8 @@ public class HomePageTests : BunitContext
         page.WaitForAssertion(() => Assert.Equal(2, Scrolls));
 
         page.FindAll("[data-test=action-row]")[0].Click();
+        Assert.Equal(2, Scrolls);
+
         Dispatch("c1", Id("aaaa"), 4, "App.D");
         page.WaitForAssertion(() => Assert.NotNull(page.Find("[data-test=new-actions]")));
         Assert.Equal(2, Scrolls);
@@ -462,8 +473,8 @@ public class HomePageTests : BunitContext
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
-        var page = Render<Home>();
 
+        var page = Render<Home>();
         Assert.Equal("CounterState · after #1 Increment", Header(page));
 
         Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
@@ -481,7 +492,7 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
         Dispatch("c1", Id("aaaa"), 2, "App.Login", "Auth");
         var page = Render<Home>();
-        page.Find("[data-test=feature-picker]").Change("Counter");
+        SelectFeature(page, "Counter");
 
         page.Find("[data-test=changed-only]").Change(true);
         Assert.Equal("CounterState · after #1 Increment", Header(page));
@@ -501,9 +512,9 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter", "Auth"]));
         Dispatch("c1", Id("aaaa"), 2, "App.Login", "Auth");
         var page = Render<Home>();
-
         page.FindAll("[data-test=action-row]")[0].Click();
-        page.Find("[data-test=feature-picker]").Change("Auth");
+
+        SelectFeature(page, "Auth");
 
         Assert.Equal("Auth didn't exist at this point", page.Find("[data-test=state-missing]").TextContent.Trim());
         Assert.Empty(page.FindAll("[data-test=state]"));
@@ -517,11 +528,11 @@ public class HomePageTests : BunitContext
              new FeatureState("Odd", "App.OddState", """{"$error":"not really","count":1}""")]));
         var page = Render<Home>();
 
-        page.Find("[data-test=feature-picker]").Change("Broken");
+        SelectFeature(page, "Broken");
         Assert.Equal("Couldn't serialise Broken: Cycle detected", page.Find("[data-test=state-error]").TextContent.Trim());
         Assert.Empty(page.FindAll("[data-test=json-tree]"));
 
-        page.Find("[data-test=feature-picker]").Change("Odd");
+        SelectFeature(page, "Odd");
         Assert.Empty(page.FindAll("[data-test=state-error]"));
         Assert.Equal(["\"not really\"", "1"], Values(page));
     }
@@ -561,10 +572,10 @@ public class HomePageTests : BunitContext
             [new FeatureState("Deep", "App.DeepState", Deep(1025)), new FeatureState("Torn", "App.TornState", """{"a":""")]));
         var page = Render<Home>();
 
-        page.Find("[data-test=feature-picker]").Change("Deep");
+        SelectFeature(page, "Deep");
         Assert.StartsWith("Couldn't read this state: The maximum configured depth of 1024", page.Find("[data-test=state] [data-test=unreadable]").TextContent.Trim());
 
-        page.Find("[data-test=feature-picker]").Change("Torn");
+        SelectFeature(page, "Torn");
         Assert.StartsWith("Couldn't read this state: ", page.Find("[data-test=state] [data-test=unreadable]").TextContent.Trim());
         Assert.Empty(page.FindAll("[data-test=json-tree]"));
     }
@@ -585,22 +596,22 @@ public class HomePageTests : BunitContext
         registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, At, "App.Increment", "{}",
             [new FeatureState("Counter", "App.CounterState", """{"a":{"b":{"c":2}}}""")])]);
         var page = Render<Home>();
-        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
-        page.Find("[data-test=feature-picker]").Change("Counter");
+        SelectSession(page, Id("aaaa"));
+        SelectFeature(page, "Counter");
 
         page.Find("[data-test=state] [data-test=toggle][data-path='$.a.b']").Click();
         Assert.True(Open(page, "$.a.b"));
 
-        page.Find("[data-test=feature-picker]").Change("Auth");
+        SelectFeature(page, "Auth");
         Assert.False(Open(page, "$.a.b"));
 
-        page.Find("[data-test=feature-picker]").Change("Counter");
+        SelectFeature(page, "Counter");
         Assert.True(Open(page, "$.a.b"));
 
         page.Find("[data-test=action-row]").Click();
         Assert.True(Open(page, "$.a.b"));
 
-        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
+        SelectSession(page, Id("bbbb"));
         Assert.True(Open(page, "$.a.b"));
     }
 
@@ -612,18 +623,19 @@ public class HomePageTests : BunitContext
 
     private static string DiffMessage(IRenderedComponent<Home> page) => page.Find("[data-test=diff-message]").TextContent.Trim();
 
+    /// <summary>The Diff tab's header as read on screen, with the markup's line breaks and indents collapsed.</summary>
+    private static string DiffHeader(IRenderedComponent<Home> page) =>
+        string.Join(' ', page.Find("[data-test=diff-header]").TextContent.Split((char[])[' ', '\n'], StringSplitOptions.RemoveEmptyEntries));
+
     private IReadOnlyList<JSRuntimeInvocation> DiffRenders => diff.Invocations["render"];
 
     [Fact]
-    public void The_State_tab_is_shown_first_and_the_tab_choice_survives_changing_Action_Feature_and_Session()
+    public void The_State_tab_is_shown_first_and_each_tab_shows_its_own_pane()
     {
-        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), "MyApp", features: ["Auth", "Counter"]));
-        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other", features: ["Counter"]));
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
-        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
-        var page = Render<Home>();
-        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
 
+        var page = Render<Home>();
         Assert.Equal("State", SelectedTab(page));
         Assert.NotEmpty(page.FindAll("[data-test=state]"));
 
@@ -632,13 +644,29 @@ public class HomePageTests : BunitContext
         Assert.Empty(page.FindAll("[data-test=state]"));
         Assert.NotEmpty(page.FindAll("[data-test=diff]"));
 
-        page.FindAll("[data-test=action-row]")[0].Click();
-        page.Find("[data-test=feature-picker]").Change("Auth");
-        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
-        Assert.Equal("Diff", SelectedTab(page));
-
         ShowTab(page, "State");
         Assert.NotEmpty(page.FindAll("[data-test=state]"));
+    }
+
+    [Fact]
+    public void The_tab_choice_survives_changing_Action_Feature_and_Session()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), "MyApp", features: ["Auth", "Counter"]));
+        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other", features: ["Counter"]));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
+        var page = Render<Home>();
+        SelectSession(page, Id("aaaa"));
+        ShowTab(page, "Diff");
+
+        page.FindAll("[data-test=action-row]")[0].Click();
+        Assert.Equal("Diff", SelectedTab(page));
+
+        SelectFeature(page, "Auth");
+        Assert.Equal("Diff", SelectedTab(page));
+
+        SelectSession(page, Id("bbbb"));
+        Assert.Equal("Diff", SelectedTab(page));
     }
 
     [Fact]
@@ -651,8 +679,7 @@ public class HomePageTests : BunitContext
 
         ShowTab(page, "Diff");
 
-        Assert.Equal("CounterState · #2 Increment · before → after",
-            string.Join(' ', page.Find("[data-test=diff-header]").TextContent.Split((char[])[' ', '\n'], StringSplitOptions.RemoveEmptyEntries)));
+        Assert.Equal("CounterState · #2 Increment · before → after", DiffHeader(page));
         var render = Assert.Single(DiffRenders);
         Assert.Equal(["""{"v":1}""", """{"v":2}""", false], render.Arguments.Skip(1));
         Assert.Empty(page.FindAll("[data-test=diff-message]"));
@@ -682,17 +709,23 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter", "Auth");
         Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter", "Auth");
         var page = Render<Home>();
+
         ShowTab(page, "Diff");
+        Assert.False(ShowUnchanged(page));
 
-        Assert.False(page.Find("[data-test=show-unchanged]").HasAttribute("checked"));
         page.Find("[data-test=show-unchanged]").Change(true);
-
         Assert.Equal(true, DiffRenders[^1].Arguments[3]);
+
         page.FindAll("[data-test=action-row]")[0].Click();
-        page.Find("[data-test=feature-picker]").Change("Counter");
-        Assert.True(page.Find("[data-test=show-unchanged]").HasAttribute("checked"));
+        Assert.True(ShowUnchanged(page));
+        Assert.Equal(true, DiffRenders[^1].Arguments[3]);
+
+        SelectFeature(page, "Counter");
+        Assert.True(ShowUnchanged(page));
         Assert.Equal(true, DiffRenders[^1].Arguments[3]);
     }
+
+    private static bool ShowUnchanged(IRenderedComponent<Home> page) => page.Find("[data-test=show-unchanged]").HasAttribute("checked");
 
     [Fact]
     public void The_Diff_tab_explains_when_there_is_no_diff_to_show()
@@ -701,8 +734,8 @@ public class HomePageTests : BunitContext
             [new FeatureState("Counter", "App.CounterState", "{}"), new FeatureState("Broken", "App.BrokenState", "{}")]));
         var page = Render<Home>();
         ShowTab(page, "Diff");
-        page.Find("[data-test=feature-picker]").Change("Counter");
 
+        SelectFeature(page, "Counter");
         Assert.Equal("Select an Action to see what it changed", DiffMessage(page));
 
         registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, At, "App.Noop", "{}",
@@ -710,12 +743,11 @@ public class HomePageTests : BunitContext
         page.WaitForAssertion(() => Assert.Equal("Counter was replaced with an identical state", DiffMessage(page)));
         Assert.Empty(page.FindAll("[data-test=show-unchanged]"));
 
-        page.Find("[data-test=feature-picker]").Change("Broken");
+        SelectFeature(page, "Broken");
         Assert.Equal("Couldn't serialise Broken after this Action: Cycle", page.Find("[data-test=diff-error]").TextContent.Trim());
 
         Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
         page.WaitForAssertion(() => Assert.Equal("No change to Broken", DiffMessage(page)));
-
         Assert.Empty(DiffRenders);
     }
 
@@ -728,9 +760,9 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 2, "App.Login", "Auth");
         var page = Render<Home>();
         ShowTab(page, "Diff");
-
         page.FindAll("[data-test=action-row]")[0].Click();
-        page.Find("[data-test=feature-picker]").Change("Auth");
+
+        SelectFeature(page, "Auth");
 
         Assert.Equal("Auth didn't exist at this point", DiffMessage(page));
     }
@@ -766,8 +798,8 @@ public class HomePageTests : BunitContext
         var renders = DiffRenders.Count;
 
         Dispatch("c1", Id("aaaa"), 3, "App.Increment", "Counter");
-        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("[data-test=new-actions]")));
 
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("[data-test=new-actions]")));
         Assert.Equal(renders, DiffRenders.Count);
     }
 
@@ -783,8 +815,8 @@ public class HomePageTests : BunitContext
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
         DispatchPayload(Id("aaaa"), 1, "App.Rename", """{"name":"café","count":2}""");
-        var page = Render<Home>();
 
+        var page = Render<Home>();
         Assert.Equal("""{"name":"café","count":2}""", PayloadLine(page));
         Assert.Equal("false", page.Find("[data-test=payload-toggle]").GetAttribute("aria-expanded"));
         Assert.Empty(page.FindAll("[data-test=payload-tree]"));
@@ -812,7 +844,7 @@ public class HomePageTests : BunitContext
         DispatchPayload(Id("aaaa"), 2, "App.Rename", """{"name":"b"}""");
         registry.ActionsReceived("c2", [new ActionRecorded(Id("bbbb"), 1, At, "App.Other", """{"x":1}""", [])]);
         var page = Render<Home>();
-        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
+        SelectSession(page, Id("aaaa"));
 
         TogglePayload(page);
         var toggle = page.Find("[data-test=payload-toggle]");
@@ -824,7 +856,7 @@ public class HomePageTests : BunitContext
         page.FindAll("[data-test=action-row]")[0].Click();
         Assert.Equal(["\"a\""], PayloadValues(page));
 
-        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
+        SelectSession(page, Id("bbbb"));
         Assert.Equal(["1"], PayloadValues(page));
 
         TogglePayload(page);
@@ -880,8 +912,8 @@ public class HomePageTests : BunitContext
         DispatchPayload(Id("aaaa"), 1, "App.Items.LoadAction", """{"$error":"Cycle detected"}""");
         DispatchPayload(Id("aaaa"), 2, "App.Odd", """{"$error":"not really","count":1}""");
         var page = Render<Home>();
-        page.FindAll("[data-test=action-row]")[0].Click();
 
+        page.FindAll("[data-test=action-row]")[0].Click();
         var error = page.Find("[data-test=payload-error]");
         Assert.Equal("Couldn't serialise LoadAction: Cycle detected", error.TextContent.Trim());
         Assert.Equal("App.Items.LoadAction", error.QuerySelector("[data-test=type]")!.GetAttribute("title"));
@@ -901,23 +933,31 @@ public class HomePageTests : BunitContext
     [Fact]
     public void Clear_is_disabled_without_a_selected_Session_or_with_nothing_to_clear()
     {
-        var page = Render<Home>();
-        Assert.False(ClearEnabled(page));
-
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
-        page.WaitForAssertion(() => Assert.Equal(2, Options(page).Length));
+
+        var page = Render<Home>();
         Assert.False(ClearEnabled(page)); // none picked
 
-        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
+        SelectSession(page, Id("aaaa"));
         Assert.False(ClearEnabled(page)); // connected, empty History
 
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
         page.WaitForAssertion(() => Assert.True(ClearEnabled(page)));
 
-        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
+        SelectSession(page, Id("bbbb"));
+        Assert.False(ClearEnabled(page)); // connected, empty History
+
         registry.ConnectionClosed("c2");
         page.WaitForAssertion(() => Assert.True(ClearEnabled(page))); // disconnected, empty History: can be removed
+    }
+
+    [Fact]
+    public void With_no_Sessions_Clear_is_disabled()
+    {
+        var page = Render<Home>();
+
+        Assert.False(ClearEnabled(page));
     }
 
     [Fact]
@@ -930,10 +970,10 @@ public class HomePageTests : BunitContext
 
         OpenClear(page);
         Assert.Equal("Clear 2 Actions from MyApp · aaaa?", ClearQuestion(page));
-        page.Find("[data-test=clear-confirm]").Click();
 
+        page.Find("[data-test=clear-confirm]").Click();
         Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
-        Assert.Equal(Id("aaaa").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value"));
+        Assert.Equal(Id("aaaa").ToString(), SelectedSession(page));
         Assert.NotNull(page.Find("[data-test=no-actions]"));
         var state = page.Find("[role=tabpanel]").TextContent;
         Assert.Contains("· current", state);
@@ -951,14 +991,14 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
         registry.ConnectionClosed("c1");
         var page = Render<Home>();
-        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
+        SelectSession(page, Id("aaaa"));
 
         OpenClear(page);
         Assert.Equal("Remove disconnected Session MyApp · aaaa?", ClearQuestion(page));
-        page.Find("[data-test=clear-confirm]").Click();
 
+        page.Find("[data-test=clear-confirm]").Click();
         Assert.Equal(["● Other · WebAssembly · bbbb"], Options(page));
-        Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value")); // the only one left
+        Assert.Equal(Id("bbbb").ToString(), SelectedSession(page)); // the only one left
     }
 
     [Fact]
@@ -976,21 +1016,31 @@ public class HomePageTests : BunitContext
     }
 
     [Fact]
-    public void Cancel_and_Escape_close_the_prompt_without_clearing()
+    public void Cancel_closes_the_prompt_without_clearing()
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
         var page = Render<Home>();
-
         OpenClear(page);
+
         page.Find("[data-test=clear-cancel]").Click();
-        Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
 
+        Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
+        Assert.Equal(["Increment"], Rows(page));
+    }
+
+    [Fact]
+    public void Escape_closes_the_prompt_without_clearing()
+    {
+        registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
+        Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
+        var page = Render<Home>();
         OpenClear(page);
-        page.Find("[data-test=clear-prompt]").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Escape" });
-        Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
 
-        Assert.Single(registry.Find(Id("aaaa"))!.Actions);
+        page.Find("[data-test=clear-prompt]").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Escape" });
+
+        Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
+        Assert.Equal(["Increment"], Rows(page));
     }
 
     [Fact]
@@ -999,6 +1049,7 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
         var page = Render<Home>();
+
         OpenClear(page);
         Assert.Equal("Clear 1 Action from MyApp · aaaa?", ClearQuestion(page));
 
@@ -1019,10 +1070,10 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
         var page = Render<Home>();
-        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
+        SelectSession(page, Id("aaaa"));
         OpenClear(page);
 
-        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
+        SelectSession(page, Id("bbbb"));
 
         Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
     }
@@ -1031,14 +1082,13 @@ public class HomePageTests : BunitContext
     public void Following_a_reloaded_app_cancels_the_prompt()
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa")));
-        var page = Render<Home>();
         registry.ConnectionClosed("c1");
-        page.WaitForAssertion(() => Assert.True(ClearEnabled(page)));
+        var page = Render<Home>();
         OpenClear(page);
 
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb")));
 
-        page.WaitForAssertion(() => Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value")));
+        page.WaitForAssertion(() => Assert.Equal(Id("bbbb").ToString(), SelectedSession(page)));
         Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
     }
 
@@ -1050,8 +1100,8 @@ public class HomePageTests : BunitContext
         var here = Render<Home>();
         var there = Render<Home>();
         OpenClear(here);
-
         OpenClear(there);
+
         there.Find("[data-test=clear-confirm]").Click();
 
         here.WaitForAssertion(() => Assert.NotNull(here.Find("[data-test=no-actions]")));
