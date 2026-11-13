@@ -38,7 +38,8 @@ else if (List.VisibleActionCount == 0)
 @if (List.Rows.Length > 0)
 {
     <div class="relative min-h-0 flex-1">
-        <div class="h-full overflow-auto" role="listbox" aria-label="Actions" data-test="action-list" @ref="scroller">
+        <div class="h-full overflow-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500 dark:focus-visible:outline-sky-400" role="listbox" aria-label="Actions" data-test="action-list" @ref="scroller"
+             tabindex="0" @onkeydown="OnKeyDown">
             @* Fixed row height (h-7 = 28px) keeps virtualisation exact. *@
             <Virtualize Items="List.Rows" ItemSize="28" Context="row">
                 @{
@@ -96,9 +97,40 @@ else if (List.VisibleActionCount == 0)
     // The newest row the list last scrolled to while following; null while paused, so resuming scrolls again.
     private HistoryEntry? scrolledTo;
 
+    // The list element whose navigation keys the JS module last took over; the list leaves the page while it has no rows.
+    private string? keysStoppedOn;
+
+    // Set by a keyboard move, so the next render scrolls the selected row into view; clicks never need it.
+    private bool revealSelected;
+
     protected override void OnInitialized() => module = new(JS, "./Components/ActionListPane.razor.js");
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await StopNativeScrollingAsync();
+        await RevealSelectedAsync();
+        await FollowNewestAsync();
+    }
+
+    private async Task StopNativeScrollingAsync()
+    {
+        if (List.Rows.Length == 0 || scroller.Id == keysStoppedOn)
+            return;
+        keysStoppedOn = scroller.Id;
+        await module.InvokeVoidAsync("stopNativeScrolling", scroller);
+    }
+
+    private async Task RevealSelectedAsync()
+    {
+        if (!revealSelected)
+            return;
+        revealSelected = false;
+        var index = Array.FindIndex(List.Rows, row => row.Entry.Id == List.Selected?.Id);
+        if (index >= 0)
+            await module.InvokeVoidAsync("scrollRowIntoView", scroller, index);
+    }
+
+    private async Task FollowNewestAsync()
     {
         var newest = List.Following && List.Rows is [.., var last] ? last.Entry : null;
         if (ReferenceEquals(newest, scrolledTo))
@@ -134,6 +166,21 @@ else if (List.VisibleActionCount == 0)
     private Task Resume()
     {
         List.Resume();
+        return SelectedChanged.InvokeAsync();
+    }
+
+    // ↑/↓/Home/End move the selection as a click would; the JS module stops them scrolling the list natively.
+    private Task OnKeyDown(KeyboardEventArgs key)
+    {
+        switch (key.Key)
+        {
+            case "ArrowUp": List.SelectPrevious(); break;
+            case "ArrowDown": List.SelectNext(); break;
+            case "Home": List.SelectFirst(); break;
+            case "End": List.SelectLast(); break;
+            default: return Task.CompletedTask;
+        }
+        revealSelected = true;
         return SelectedChanged.InvokeAsync();
     }
 

@@ -339,4 +339,129 @@ public class ActionListTests
 
         Assert.Equal(2, list.NewCount);
     }
+
+    // UI-9: keyboard navigation.
+
+    [Fact]
+    public void Selecting_the_previous_row_from_the_newest_pauses_follow_mode()
+    {
+        list.Update(Session(Action(1), Resync(5, id: 2), Action(6, id: 3)), null);
+
+        list.SelectPrevious();
+
+        Assert.IsType<ResyncEntry>(list.Selected);
+        Assert.False(list.Following);
+    }
+
+    [Fact]
+    public void Selecting_the_next_row_onto_the_newest_resumes_follow_mode()
+    {
+        list.Update(Session(Action(1), Action(2), Action(3)), null);
+        list.Select(2);
+
+        list.SelectNext();
+
+        Assert.Equal(3, list.Selected?.Sequence);
+        Assert.True(list.Following);
+    }
+
+    [Fact]
+    public void Moving_past_either_end_does_nothing()
+    {
+        list.Update(Session(Action(1), Action(2)), null);
+
+        list.SelectNext();
+        Assert.Equal(2, list.Selected?.Sequence);
+        Assert.True(list.Following);
+
+        list.Select(1);
+        list.SelectPrevious();
+        Assert.Equal(1, list.Selected?.Sequence);
+        Assert.False(list.Following);
+    }
+
+    [Fact]
+    public void With_no_rows_moving_selects_nothing()
+    {
+        list.Update(Session(), null);
+
+        list.SelectNext();
+        list.SelectPrevious();
+
+        Assert.Null(list.Selected);
+    }
+
+    [Fact]
+    public void With_the_selection_hidden_next_selects_the_nearest_visible_row_after_it()
+    {
+        list.Update(Session(Action(1, "App.A"), Action(2, "App.B"), Action(3, "App.A"), Action(4, "App.A")), null);
+        list.Select(2);
+        list.Filter = "A";
+
+        list.SelectNext();
+
+        Assert.Equal(3, list.Selected?.Sequence);
+    }
+
+    [Fact]
+    public void With_the_selection_hidden_previous_selects_the_nearest_visible_row_before_it()
+    {
+        list.Update(Session(Action(1, "App.A"), Action(2, "App.A"), Action(3, "App.B"), Action(4, "App.A")), null);
+        list.Select(3);
+        list.Filter = "A";
+
+        list.SelectPrevious();
+
+        Assert.Equal(2, list.Selected?.Sequence);
+    }
+
+    [Fact]
+    public void With_the_selection_hidden_and_no_visible_row_on_that_side_moving_does_nothing()
+    {
+        list.Update(Session(Action(1, "App.B"), Action(2, "App.A"), Action(3, "App.A")), null);
+        list.Select(1);
+        list.Filter = "A";
+
+        list.SelectPrevious();
+
+        Assert.Equal(1, list.Selected?.Sequence);
+    }
+
+    [Fact]
+    public void Selecting_the_first_row_selects_the_oldest_visible_row_and_pauses_follow_mode()
+    {
+        list.Update(Session(Action(1, "App.B"), Action(2, "App.A"), Action(3, "App.A")), null);
+        list.Filter = "A";
+
+        list.SelectFirst();
+
+        Assert.Equal(2, list.Selected?.Sequence);
+        Assert.False(list.Following);
+    }
+
+    [Fact]
+    public void Selecting_the_last_row_resumes_follow_mode()
+    {
+        var id = Guid.NewGuid();
+        list.Update(Session(id, Action(1), Action(2)), null);
+        list.Select(1);
+        list.Update(Session(id, Action(1), Action(2), Action(3)), null);
+
+        list.SelectLast();
+
+        Assert.Equal(3, list.Selected?.Sequence);
+        Assert.True(list.Following);
+        Assert.Equal(0, list.NewCount);
+    }
+
+    [Fact]
+    public void With_no_rows_selecting_the_first_or_last_selects_nothing()
+    {
+        list.Update(Session(), null);
+
+        list.SelectFirst();
+        list.SelectLast();
+
+        Assert.Null(list.Selected);
+    }
 }

@@ -103,7 +103,7 @@ for (let sequence = 1; sequence <= total; ) {
       sequence,
       timestamp: new Date().toISOString(),
       actionType: "Fake.IncrementAction",
-      actionJson: JSON.stringify({ amount: 1 }),
+      payload: JSON.stringify({ amount: 1 }),
       changedFeatures: [counter(sequence)],
     });
   }
