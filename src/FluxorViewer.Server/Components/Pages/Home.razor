@@ -41,25 +41,25 @@
                 {
                     @if (actions.Selected is ActionEntry action)
                     {
-                        <PayloadStrip Action="action" @bind-Expanded="payloadExpanded" Toggles="payloadChoices.For(action.ActionType)" />
+                        <PayloadStrip Action="action" @bind-Expanded="pane.PayloadExpanded" Toggles="pane.PayloadChoices.For(action.ActionType)" />
                     }
                     <div class="flex gap-1 border-b border-zinc-200 px-4 dark:border-zinc-800" role="tablist" aria-label="Right pane" data-test="tabs">
                         @foreach (var tab in Enum.GetValues<RightTab>())
                         {
-                            var selected = tab == rightTab;
+                            var selected = tab == pane.Tab;
                             <button class="-mb-px border-b-2 px-3 py-2 text-sm @(selected ? "border-sky-600 text-zinc-900 dark:border-sky-400 dark:text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100")"
-                                    role="tab" aria-selected="@(selected ? "true" : "false")" data-test="tab" @onclick="() => rightTab = tab">@tab</button>
+                                    role="tab" aria-selected="@(selected ? "true" : "false")" data-test="tab" @onclick="() => pane.Tab = tab">@tab</button>
                         }
                     </div>
-                    <div class="pane flex-1" role="tabpanel" aria-label="@rightTab">
-                        @if (rightTab == RightTab.Diff)
+                    <div class="pane flex-1" role="tabpanel" aria-label="@pane.Tab">
+                        @if (pane.Tab == RightTab.Diff)
                         {
-                            <DiffPane Feature="@features.Selected" Entry="actions.Selected" @bind-ShowUnchanged="showUnchanged" />
+                            <DiffPane Feature="@features.Selected" Entry="actions.Selected" @bind-ShowUnchanged="pane.ShowUnchanged" />
                         }
                         else
                         {
                             <StatePane Feature="@features.Selected" Entry="actions.Selected" Current="SelectedSession?.Current ?? []"
-                                       Toggles="stateChoices.For(features.Selected)" />
+                                       Toggles="pane.StateChoices.For(features.Selected)" />
                         }
                     </div>
                 }
@@ -73,19 +73,8 @@
     private readonly FeatureSelection features = new();
     private readonly ActionList actions = new();
     private IReadOnlyList<ReceivedSession> sessions = [];
+    private readonly RightPaneState pane = new();
     private RenderThrottle? throttle;
-
-    // The State tab's expand/collapse choices, per Feature name.
-    private readonly TreeChoices stateChoices = new();
-
-    // The payload strip: open or collapsed whatever the Action, and its tree's choices per full Action type, for this Viewer tab.
-    private bool payloadExpanded;
-    private readonly TreeChoices payloadChoices = new();
-
-    // The right pane's tab and the Diff tab's "Show unchanged", for this Viewer tab whatever the Action, Feature or Session.
-    private enum RightTab { State, Diff }
-    private RightTab rightTab = RightTab.State;
-    private bool showUnchanged;
 
     protected override void OnInitialized()
     {
