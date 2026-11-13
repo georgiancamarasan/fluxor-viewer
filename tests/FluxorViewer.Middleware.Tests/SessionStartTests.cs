@@ -32,12 +32,6 @@ public class SessionStartTests
         return store;
     }
 
-    private static async Task<Snapshot> FirstSnapshot(FakeViewer viewer)
-    {
-        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Ct);
-        return Assert.IsType<Snapshot>(await connection.FirstMessage.WaitAsync(Timeout, Ct));
-    }
-
     [Fact]
     public async Task First_message_is_a_Snapshot_of_every_Feature()
     {
@@ -45,7 +39,7 @@ public class SessionStartTests
         await using var provider = Provider(viewer);
         await StartStore(provider);
 
-        var snapshot = await FirstSnapshot(viewer);
+        var snapshot = await viewer.FirstSnapshot();
 
         Assert.Equal(ProtocolVersion.Current, snapshot.ProtocolVersion);
         Assert.Equal("TestApp", snapshot.AppName);
@@ -74,7 +68,7 @@ public class SessionStartTests
         var before = DateTimeOffset.UtcNow;
         await StartStore(provider);
 
-        var snapshot = await FirstSnapshot(viewer);
+        var snapshot = await viewer.FirstSnapshot();
 
         Assert.NotEqual(Guid.Empty, snapshot.SessionId);
         Assert.Equal(Runtime.Server, snapshot.Runtime); // WebAssembly is checked by hand in MW-8.
@@ -119,7 +113,7 @@ public class SessionStartTests
         provider.GetRequiredService<IDispatcher>().Dispatch(new IncrementAction());
 
         viewer.ConnectGate.SetResult();
-        var snapshot = await FirstSnapshot(viewer);
+        var snapshot = await viewer.FirstSnapshot();
 
         var counter = Assert.Single(snapshot.Features, f => f.Name == "Counter");
         Assert.Equal(0, CounterJson.Count(counter));
@@ -222,21 +216,22 @@ public class SessionStartTests
     }
 
     [Theory]
-    [InlineData("http://localhost:5299", "http://localhost:5299/hub/ingest")]
-    [InlineData("http://localhost:5299/", "http://localhost:5299/hub/ingest")]
-    [InlineData("http://127.0.0.1:5299/viewer", "http://127.0.0.1:5299/viewer/hub/ingest")]
-    [InlineData("https://host.docker.internal:5299/viewer/", "https://host.docker.internal:5299/viewer/hub/ingest")]
-    public void Hub_url_is_under_the_server_url(string serverUrl, string expected) =>
-        Assert.Equal(new Uri(expected), SignalRViewerConnectionFactory.HubUrl(new Uri(serverUrl)));
-
-    [Fact]
-    public void Registration_uses_SignalR_by_default()
+    [InlineData("", "/hub/ingest/negotiate")]
+    [InlineData("/", "/hub/ingest/negotiate")]
+    [InlineData("/viewer", "/viewer/hub/ingest/negotiate")]
+    [InlineData("/viewer/", "/viewer/hub/ingest/negotiate")]
+    public async Task By_default_it_looks_for_the_ingest_hub_under_the_ServerUrl_keeping_its_path(string path, string requested)
     {
+        using var endpoint = new RequestRecorder();
         var services = new ServiceCollection();
-        services.AddFluxor(o => o.ScanTypes(typeof(CounterFeature)).UseFluxorViewer(v => v.Enabled = true));
+        services.AddFluxor(o => o
+            .ScanTypes(typeof(CounterFeature), typeof(CounterReducers))
+            .UseFluxorViewer(v => { v.Enabled = true; v.ServerUrl = endpoint.BaseUrl + path; }));
+        await using var provider = services.BuildServiceProvider();
 
-        Assert.Contains(services, d =>
-            d.ServiceType == typeof(IViewerConnectionFactory) && d.ImplementationType == typeof(SignalRViewerConnectionFactory));
+        await StartStore(provider);
+
+        Assert.Equal(requested, await endpoint.FirstPath); // SignalR's negotiate request, under the hub's URL
     }
 }
 

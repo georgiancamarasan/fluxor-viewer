@@ -1,14 +1,12 @@
-using Microsoft.AspNetCore.Mvc.Testing;
-
 namespace FluxorViewer.Server.Tests;
 
-// PK-1: proves the Viewer host boots under WebApplicationFactory; ingest hub tests build on this.
-public class ServerSmokeTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+// PK-1: proves the Viewer host boots on real Kestrel; ingest hub tests build on this.
+public class ServerSmokeTests(Viewer viewer) : IClassFixture<Viewer>
 {
     [Fact]
-    public async Task Server_starts_and_serves_root()
+    public async Task The_Viewer_starts_and_serves_its_page()
     {
-        using var client = factory.CreateClient();
+        using var client = new HttpClient { BaseAddress = viewer.BaseAddress };
 
         var response = await client.GetAsync("/", TestContext.Current.CancellationToken);
 

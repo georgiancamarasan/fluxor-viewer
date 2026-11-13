@@ -36,6 +36,13 @@ internal sealed class FakeViewer : IViewerConnectionFactory
 
     public Task<FakeConnection> FirstConnection => firstConnection.Task;
 
+    /// <summary>Waits for the first connection's first message, which must be a Snapshot.</summary>
+    public async Task<Snapshot> FirstSnapshot()
+    {
+        var connection = await FirstConnection.WaitAsync(Wait.Timeout, Wait.Ct);
+        return Assert.IsType<Snapshot>(await connection.FirstMessage.WaitAsync(Wait.Timeout, Wait.Ct));
+    }
+
     public FakeViewer(bool connectImmediately = true)
     {
         if (connectImmediately)

@@ -16,6 +16,21 @@ public class UseFluxorViewerTests
         return services;
     }
 
+    private static ServiceProvider Provider(FakeViewer viewer, Action<FluxorViewerOptions> configure)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IViewerConnectionFactory>(viewer);
+        services.AddFluxor(o => o.ScanTypes(typeof(CounterFeature), typeof(CounterReducers)).UseFluxorViewer(configure));
+        return services.BuildServiceProvider();
+    }
+
+    private static void DispatchIncrements(IServiceProvider provider, int count)
+    {
+        var dispatcher = provider.GetRequiredService<IDispatcher>();
+        for (var i = 0; i < count; i++)
+            dispatcher.Dispatch(new IncrementAction());
+    }
+
     private static async Task<IReadOnlyList<IMiddleware>> MiddlewaresOf(ServiceCollection services)
     {
         await using var provider = services.BuildServiceProvider();
@@ -37,39 +52,40 @@ public class UseFluxorViewerTests
     }
 
     [Fact]
-    public async Task Enabled_adds_the_middleware_to_the_store_with_the_configured_options()
+    public async Task Enabled_reports_the_store_to_the_Viewer_under_the_configured_AppName()
     {
-        var services = Services(o => o.UseFluxorViewer(v =>
-        {
-            v.Enabled = true;
-            v.AppName = "MyApp";
-        }));
+        var viewer = new FakeViewer();
+        await using var provider = Provider(viewer, v => { v.Enabled = true; v.AppName = "MyApp"; });
 
-        var middleware = Assert.Single((await MiddlewaresOf(services)).OfType<FluxorViewerMiddleware>());
-        Assert.Equal("MyApp", middleware.Options.AppName);
+        await provider.GetRequiredService<IStore>().InitializeAsync();
+
+        Assert.Equal("MyApp", (await viewer.FirstSnapshot()).AppName);
     }
 
     [Fact]
-    public void Defaults()
+    public async Task By_default_it_reports_to_localhost_5299_under_the_entry_assembly_name()
     {
-        var options = new FluxorViewerOptions();
+        var viewer = new FakeViewer();
+        await using var provider = Provider(viewer, v => v.Enabled = true);
 
-        Assert.Equal("http://localhost:5299", options.ServerUrl);
-        Assert.Equal("FluxorViewer.Middleware.Tests", options.AppName); // the entry assembly: here, the test project
-        Assert.Equal(1000, options.BufferSize);
-        Assert.Equal(64, options.MaxDepth);
-        Assert.False(options.Enabled);
-        Assert.Empty(options.IgnoredActionPredicates);
+        await provider.GetRequiredService<IStore>().InitializeAsync();
+
+        var snapshot = await viewer.FirstSnapshot();
+        Assert.Equal("FluxorViewer.Middleware.Tests", snapshot.AppName); // the entry assembly: here, the test project
+        Assert.Equal(new Uri("http://localhost:5299"), Assert.Single(viewer.Connections).ServerUrl);
     }
 
     [Fact]
-    public void IgnoreAction_collects_predicates()
+    public async Task By_default_1000_Actions_wait_for_the_Viewer_and_older_ones_are_dropped()
     {
-        var options = new FluxorViewerOptions()
-            .IgnoreAction(a => a is IncrementAction)
-            .IgnoreAction(_ => false);
+        var viewer = new FakeViewer(connectImmediately: false);
+        await using var provider = Provider(viewer, v => v.Enabled = true);
+        await provider.GetRequiredService<IStore>().InitializeAsync();
+        DispatchIncrements(provider, 1000); // after StoreInitializedAction: one more than fits
 
-        Assert.Equal(2, options.IgnoredActionPredicates.Count);
+        viewer.ConnectGate.SetResult();
+
+        Assert.Equal(1, (await viewer.FirstSnapshot()).DroppedCount);
     }
 
     [Theory]
@@ -165,7 +181,7 @@ public class UseFluxorViewerTests
     [InlineData(false, false)]
     [InlineData(false, true)]
     [InlineData(true, true)]
-    public void Calling_twice_throws(bool firstEnabled, bool secondEnabled)
+    public void Calling_UseFluxorViewer_twice_is_an_error_whether_enabled_or_not(bool firstEnabled, bool secondEnabled)
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
             Services(o => o

@@ -21,7 +21,7 @@ public class FeatureDiffTests
         Assert.IsType<FeatureDiff.NoAction>(FeatureDiff.For(null, "Counter"));
 
     [Fact]
-    public void A_Feature_missing_after_the_Action_is_missing() =>
+    public void A_Feature_absent_after_the_Action_did_not_exist_at_that_point() =>
         Assert.IsType<FeatureDiff.Missing>(FeatureDiff.For(Action(Map(), Map(("Auth", "{}"))), "Counter"));
 
     [Fact]

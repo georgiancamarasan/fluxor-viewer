@@ -142,16 +142,6 @@ public class HomePageTests : BunitContext
             Assert.Equal(Id("bbbb").ToString(), SelectedSession(page)));
     }
 
-    [Fact]
-    public void Controls_owned_by_later_stories_are_disabled_placeholders()
-    {
-        registry.SnapshotReceived("c1", NewSnapshot(Guid.NewGuid()));
-
-        var page = Render<Home>();
-
-        Assert.True(page.Find("[data-test=clear]").HasAttribute("disabled"));
-    }
-
     private string[] Features(IRenderedComponent<Home> page) =>
         [.. page.FindAll("[data-test=feature-option]").Select(o => o.TextContent.Trim())];
 

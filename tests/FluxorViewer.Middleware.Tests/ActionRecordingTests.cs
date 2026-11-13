@@ -168,15 +168,28 @@ public class ActionRecordingTests
         Assert.Equal(1, Count(action.ChangedFeatures.Single(f => f.Name == "Counter")));
     }
 
+    public static TheoryData<object, string> ActionsAndTheirTypeNames => new()
+    {
+        { new IncrementAction(), "FluxorViewer.Middleware.Tests.IncrementAction" },
+        { new Items.LoadedAction<Item>([]), "FluxorViewer.Middleware.Tests.Items.LoadedAction<FluxorViewer.Middleware.Tests.Item>" },
+        { new Outer<int>.Inner<string>(), "FluxorViewer.Middleware.Tests.Outer<System.Int32>.Inner<System.String>" },
+        { new Dictionary<string, List<int>>(), "System.Collections.Generic.Dictionary<System.String, System.Collections.Generic.List<System.Int32>>" },
+        { new Items.LoadedAction<int?>([]), "FluxorViewer.Middleware.Tests.Items.LoadedAction<System.Nullable<System.Int32>>" },
+        { new Item[0], "FluxorViewer.Middleware.Tests.Item[]" },
+        { new int[0, 0], "System.Int32[,]" },
+    };
+
     [Theory]
-    [InlineData(typeof(IncrementAction), "FluxorViewer.Middleware.Tests.IncrementAction")]
-    [InlineData(typeof(Items.LoadedAction<Item>), "FluxorViewer.Middleware.Tests.Items.LoadedAction<FluxorViewer.Middleware.Tests.Item>")]
-    [InlineData(typeof(Outer<int>.Inner<string>), "FluxorViewer.Middleware.Tests.Outer<System.Int32>.Inner<System.String>")]
-    [InlineData(typeof(Dictionary<string, List<int>>), "System.Collections.Generic.Dictionary<System.String, System.Collections.Generic.List<System.Int32>>")]
-    [InlineData(typeof(int?), "System.Nullable<System.Int32>")]
-    [InlineData(typeof(Item[]), "FluxorViewer.Middleware.Tests.Item[]")]
-    [InlineData(typeof(int[,]), "System.Int32[,]")]
-    public void Readable_type_names(Type type, string expected) => Assert.Equal(expected, TypeNames.Readable(type));
+    [MemberData(nameof(ActionsAndTheirTypeNames))]
+    public async Task Action_types_are_sent_as_full_names_written_the_way_CSharp_writes_them(object action, string typeName)
+    {
+        await using var harness = new Harness();
+        var (connection, _) = await harness.StartConnected();
+
+        harness.Dispatcher.Dispatch(action);
+
+        Assert.Equal(typeName, Assert.Single(await Harness.ActionsSent(connection, 1)).ActionType);
+    }
 }
 
 public record NothingAction;

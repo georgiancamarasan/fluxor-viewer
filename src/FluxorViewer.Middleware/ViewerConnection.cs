@@ -28,7 +28,7 @@ internal sealed class SignalRViewerConnectionFactory : IViewerConnectionFactory
         new HubConnectionBuilder().WithUrl(HubUrl(serverUrl)).Build());
 
     /// <summary>The ingest hub under <paramref name="serverUrl"/>, keeping any path it has.</summary>
-    internal static Uri HubUrl(Uri serverUrl)
+    private static Uri HubUrl(Uri serverUrl)
     {
         var baseUrl = serverUrl.AbsoluteUri.EndsWith('/') ? serverUrl : new Uri(serverUrl.AbsoluteUri + "/");
         return new Uri(baseUrl, IngestHubContract.Path);

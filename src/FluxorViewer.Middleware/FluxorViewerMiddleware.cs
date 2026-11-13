@@ -13,8 +13,6 @@ internal sealed class FluxorViewerMiddleware(
     TimeProvider? time = null)
     : Fluxor.Middleware, IAsyncDisposable, IDisposable
 {
-    internal FluxorViewerOptions Options { get; } = options;
-
     internal SessionReporter Reporter { get; } = new(new ReporterContext(
         options,
         connectionFactory,

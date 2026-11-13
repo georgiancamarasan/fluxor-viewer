@@ -53,7 +53,7 @@ public class RoundTripTests
     }
 
     [Fact]
-    public void Payload_json_is_carried_as_an_opaque_string()
+    public void Feature_state_JSON_is_carried_as_an_opaque_string()
     {
         var state = new FeatureState("Counter", "MyApp.CounterState", """{"count":3}""");
 
