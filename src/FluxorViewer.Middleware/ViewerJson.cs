@@ -27,6 +27,9 @@ internal sealed class ViewerJson(FluxorViewerOptions options, ILogger logger)
         MaxDepth = options.MaxDepth,
     };
 
+    /// <summary>The largest message, in bytes, the Viewer accepts.</summary>
+    public int MaxMessageSize => options.MaxMessageSize;
+
     /// <summary>What the log calls an Action type, by its readable name (<see cref="TypeNames.Readable"/>).</summary>
     public static string ActionSubject(string actionType) => $"Action {actionType}";
 
@@ -73,7 +76,7 @@ internal sealed class ViewerJson(FluxorViewerOptions options, ILogger logger)
     public string LeftOut(string subject, string valueJson)
     {
         Log(subject, null, "FluxorViewer: left out {Subject} to keep a message under the Viewer's limit; sent a Serialisation error instead.");
-        return Error($"Left out to stay under the Viewer's {ByteSize.Readable(JsonLimits.MaxMessageSize)} limit " +
+        return Error($"Left out to stay under the Viewer's {ByteSize.Readable(MaxMessageSize)} limit " +
                      $"({ByteSize.Readable(Encoding.UTF8.GetByteCount(valueJson))})");
     }
 

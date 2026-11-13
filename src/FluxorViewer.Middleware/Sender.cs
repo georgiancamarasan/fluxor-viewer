@@ -115,7 +115,7 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
     private async Task SendBatchAsync(IViewerConnection connection, Batch batch, CancellationToken cancellationToken)
     {
         var messages = batch.Actions.Select(TryBuild).OfType<ActionRecorded>();
-        foreach (var part in WireJson.Split(messages))
+        foreach (var part in WireJson.Split(messages, json))
             await connection.SendActionsAsync(part, cancellationToken);
     }
 

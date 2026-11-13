@@ -41,6 +41,12 @@ public sealed class FluxorViewerOptions
     internal IReadOnlyList<Func<object, bool>> IgnoredActionPredicates => ignoredActionPredicates;
 
     /// <summary>
+    /// The largest message, in bytes, the Viewer accepts: always <see cref="JsonLimits.MaxMessageSize"/>, but smaller in
+    /// tests so they don't need tens of MB to reach it.
+    /// </summary>
+    internal int MaxMessageSize { get; set; } = JsonLimits.MaxMessageSize;
+
+    /// <summary>
     /// Don't report Actions for which <paramref name="predicate"/> returns true. They take no Sequence, and the state they
     /// change is reported with the next reported Action. A predicate that throws counts as false and is logged.
     /// </summary>
@@ -76,9 +82,9 @@ public sealed class FluxorViewerOptions
             yield return Problem.OutOfRange(nameof(BufferSize), BufferSize, $"BufferSize must be at least 1, but was {BufferSize}.");
         if (MaxDepth is < 1 or > JsonLimits.MaxDepth)
             yield return Problem.OutOfRange(nameof(MaxDepth), MaxDepth, $"MaxDepth must be between 1 and {JsonLimits.MaxDepth}, but was {MaxDepth}.");
-        if (MaxValueSize is < 1 or > JsonLimits.MaxMessageSize)
+        if (MaxValueSize < 1 || MaxValueSize > MaxMessageSize)
             yield return Problem.OutOfRange(nameof(MaxValueSize), MaxValueSize,
-                $"MaxValueSize must be between 1 and {JsonLimits.MaxMessageSize} bytes ({ByteSize.Readable(JsonLimits.MaxMessageSize)}), but was {MaxValueSize}.");
+                $"MaxValueSize must be between 1 and {MaxMessageSize} bytes ({ByteSize.Readable(MaxMessageSize)}), but was {MaxValueSize}.");
     }
 
     private static bool IsHttpUrl(string url) =>

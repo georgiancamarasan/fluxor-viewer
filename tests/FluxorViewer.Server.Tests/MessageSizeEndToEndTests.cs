@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace FluxorViewer.Server.Tests;
 
 // MW-9: what the middleware sends to stay under the Viewer's 32 MB message limit really is under it, on the real hub.
+// These hold hundreds of MB, so they run alone rather than alongside other test classes.
+[Collection(typeof(LargeMessages))]
 public class MessageSizeEndToEndTests(Viewer viewer) : IClassFixture<Viewer>
 {
     /// <summary>
@@ -70,6 +72,10 @@ public class MessageSizeEndToEndTests(Viewer viewer) : IClassFixture<Viewer>
             s.Actions.Count(a => a.ActionType == typeof(NoteAction).FullName) == 8));
     }
 }
+
+/// <summary>Tests that need tens of MB at a time: they run on their own, not in parallel with other test classes.</summary>
+[CollectionDefinition(DisableParallelization = true)]
+public class LargeMessages;
 
 public record NoteAction(string Text);
 

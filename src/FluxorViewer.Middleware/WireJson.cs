@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.SignalR;
 namespace FluxorViewer.Middleware;
 
 /// <summary>
-/// Keeps each message under the Viewer's limit (<see cref="JsonLimits.MaxMessageSize"/>): measures messages as the hub
+/// Keeps each message under the Viewer's limit (<see cref="ViewerJson.MaxMessageSize"/>): measures messages as the hub
 /// connection sends them, splits Actions between calls, and shrinks a message that's over it on its own.
 /// </summary>
 internal static class WireJson
@@ -17,7 +17,7 @@ internal static class WireJson
     internal const int Headroom = 64 * 1024;
 
     /// <summary>The most a Snapshot, or one call's Actions together, may take in <see cref="Options"/>.</summary>
-    public const long Budget = JsonLimits.MaxMessageSize - Headroom;
+    public static long Budget(ViewerJson json) => json.MaxMessageSize - Headroom;
 
     /// <summary>
     /// The payload options SignalR's JSON protocol sends with by default, which the hub connection uses unchanged. Their
@@ -46,14 +46,15 @@ internal static class WireJson
     /// <paramref name="actions"/> in order, in as few parts as fit <see cref="Budget"/>; an Action too large on its own
     /// goes in a part by itself. Parts only divide what they're given, so never hold more Actions than it.
     /// </summary>
-    public static IEnumerable<IReadOnlyList<ActionRecorded>> Split(IEnumerable<ActionRecorded> actions)
+    public static IEnumerable<IReadOnlyList<ActionRecorded>> Split(IEnumerable<ActionRecorded> actions, ViewerJson json)
     {
+        var budget = Budget(json);
         var part = new List<ActionRecorded>();
         long size = 0;
         foreach (var action in actions)
         {
             var actionSize = Size(action, ActionShape) + 1; // and the comma between it and the next
-            if (part.Count > 0 && size + actionSize > Budget)
+            if (part.Count > 0 && size + actionSize > budget)
             {
                 yield return part;
                 (part, size) = ([], 0);
@@ -85,26 +86,27 @@ internal static class WireJson
     private static T Fit<T>(T message, Shape<T> shape, ViewerJson json)
     {
         var size = Size(message, shape);
-        return size <= Budget ? message : shape.With(message, LeaveOutLargest(size, shape.Values(message), json));
+        return size <= Budget(json) ? message : shape.With(message, LeaveOutLargest(size, shape.Values(message), json));
     }
 
     /// <summary>The JSON of <paramref name="values"/>, the largest left out until a message of <paramref name="size"/> fits.</summary>
     private static string[] LeaveOutLargest(long size, IReadOnlyList<MessageValue> values, ViewerJson json)
     {
+        var budget = Budget(json);
         var fitted = values.Select(v => v.Json).ToArray();
         var largestFirst = values.Select((value, index) => (Index: index, Size: EncodedSize(value.Json))).OrderByDescending(v => v.Size);
         foreach (var (index, valueSize) in largestFirst)
         {
-            if (size <= Budget)
+            if (size <= budget)
                 break;
             fitted[index] = json.LeftOut(values[index].Subject, values[index].Json);
             size += EncodedSize(fitted[index]) - valueSize;
         }
 
-        return size <= Budget
+        return size <= budget
             ? fitted
             : throw new InvalidOperationException(
-                $"The message is over the Viewer's {ByteSize.Readable(JsonLimits.MaxMessageSize)} limit even with every Payload and Feature state left out.");
+                $"The message is over the Viewer's {ByteSize.Readable(json.MaxMessageSize)} limit even with every Payload and Feature state left out.");
     }
 
     /// <summary>

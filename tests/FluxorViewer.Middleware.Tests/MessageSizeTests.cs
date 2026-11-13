@@ -8,9 +8,19 @@ namespace FluxorViewer.Middleware.Tests;
 // MW-9: a huge Payload or Feature state doesn't stop a Session reporting: values over MaxValueSize become Serialisation
 // errors, batches are split under the Viewer's message limit, and a message still over it is shrunk to fit.
 // The Warnings are once per process, so each test that checks them has Action types or Features of its own.
+// Tests of the message limit lower it to 1 MB (UnderOneMegabyte), so they reach it without holding hundreds of MB; the
+// Server's MessageSizeEndToEndTests check the real 32 MB limit.
 public class MessageSizeTests
 {
-    private const int Megabyte = 1024 * 1024;
+    private const int Kilobyte = 1024;
+    private const int Megabyte = 1024 * Kilobyte;
+
+    /// <summary>A message limit of 1 MB instead of the Viewer's 32 MB, with MaxValueSize, which can't exceed it, at 1 MB too.</summary>
+    private static void UnderOneMegabyte(FluxorViewerOptions options)
+    {
+        options.MaxMessageSize = Megabyte;
+        options.MaxValueSize = Megabyte;
+    }
 
     /// <summary>The message when <paramref name="json"/> is exactly <c>{"$error": "message"}</c>.</summary>
     private static string Error(string json)
@@ -94,34 +104,34 @@ public class MessageSizeTests
     }
 
     [Fact]
-    public async Task Actions_waiting_together_are_split_into_batches_under_the_Viewers_32_MB_limit()
+    public async Task Actions_waiting_together_are_split_into_batches_under_the_Viewers_limit()
     {
-        await using var harness = new Harness();
+        await using var harness = new Harness(configure: UnderOneMegabyte);
         var connection = await harness.Start();
-        DispatchNotes(harness, 10, 5 * Megabyte);
+        DispatchNotes(harness, 10, 150 * Kilobyte);
 
         harness.Viewer.ConnectGate.SetResult();
 
         await Harness.ActionsSent(connection, 10);
-        // StoreInitializedAction and six 5 MB Notes fill the first batch; the other four Notes go in the second.
+        // StoreInitializedAction and six 150 KB Notes fill the first batch; the other four Notes go in the second.
         Assert.Equal([7, 4], BatchSizes(connection));
     }
 
     [Fact]
     public async Task A_Snapshot_over_the_limit_leaves_out_its_largest_Feature_states_until_it_fits_and_the_Session_goes_on()
     {
-        await using var harness = new Harness(types: Chapters, configure: v => { v.BufferSize = 1; v.MaxValueSize = 32 * Megabyte; });
+        await using var harness = new Harness(types: Chapters, configure: v => { UnderOneMegabyte(v); v.BufferSize = 1; });
         var connection = await harness.Start();
-        harness.Dispatcher.Dispatch(new WriteChapterOneAction(TextOf(20 * Megabyte)));
-        harness.Dispatcher.Dispatch(new WriteChapterTwoAction(TextOf(15 * Megabyte)));
+        harness.Dispatcher.Dispatch(new WriteChapterOneAction(TextOf(600 * Kilobyte)));
+        harness.Dispatcher.Dispatch(new WriteChapterTwoAction(TextOf(450 * Kilobyte)));
         harness.Dispatcher.Dispatch(new NothingAction()); // both writes are dropped into the base
 
         harness.Viewer.ConnectGate.SetResult();
 
         var snapshot = await harness.Viewer.FirstSnapshot();
-        Assert.Equal("Left out to stay under the Viewer's 32 MB limit (20 MB)",
+        Assert.Equal("Left out to stay under the Viewer's 1 MB limit (600 KB)",
             Error(Assert.Single(snapshot.Features, f => f.Name == "ChapterOne").StateJson));
-        Assert.Equal(15 * Megabyte, Assert.Single(snapshot.Features, f => f.Name == "ChapterTwo").StateJson.Length);
+        Assert.Equal(450 * Kilobyte, Assert.Single(snapshot.Features, f => f.Name == "ChapterTwo").StateJson.Length);
         Assert.Single(await Harness.ActionsSent(connection, 1));
         Assert.Single(harness.Viewer.Connections);
         Assert.Equal([LogLevel.Warning], LevelsLoggedAbout(harness, "Feature ChapterOne"));
@@ -130,37 +140,37 @@ public class MessageSizeTests
     [Fact]
     public async Task An_Action_over_the_limit_leaves_out_its_largest_value_with_its_Payload_among_them()
     {
-        await using var harness = new Harness(types: Chapters, configure: v => v.MaxValueSize = 32 * Megabyte);
+        await using var harness = new Harness(types: Chapters, configure: UnderOneMegabyte);
         var (connection, _) = await harness.StartConnected();
 
-        harness.Dispatcher.Dispatch(new ReviseChapterOneAction(TextOf(20 * Megabyte), new string('n', 5 * Megabyte)));
-        harness.Dispatcher.Dispatch(new ReviseChapterOneAction(TextOf(20 * Megabyte), new string('n', 5 * Megabyte)));
+        harness.Dispatcher.Dispatch(new ReviseChapterOneAction(TextOf(600 * Kilobyte), new string('n', 150 * Kilobyte)));
+        harness.Dispatcher.Dispatch(new ReviseChapterOneAction(TextOf(600 * Kilobyte), new string('n', 150 * Kilobyte)));
 
         var actions = await Harness.ActionsSent(connection, 2);
-        Assert.Equal("Left out to stay under the Viewer's 32 MB limit (25 MB)", Error(actions[0].Payload));
-        Assert.Equal(20 * Megabyte, Assert.Single(actions[0].ChangedFeatures).StateJson.Length);
+        Assert.Equal("Left out to stay under the Viewer's 1 MB limit (750 KB)", Error(actions[0].Payload));
+        Assert.Equal(600 * Kilobyte, Assert.Single(actions[0].ChangedFeatures).StateJson.Length);
         Assert.Equal([LogLevel.Warning, LogLevel.Debug], LevelsLoggedAbout(harness, "ReviseChapterOneAction"));
     }
 
     [Fact]
     public async Task After_an_Action_is_shrunk_the_next_Snapshot_still_has_the_real_Feature_state()
     {
-        await using var harness = new Harness(types: Chapters, configure: v => v.MaxValueSize = 32 * Megabyte);
+        await using var harness = new Harness(types: Chapters, configure: UnderOneMegabyte);
         var (connection, _) = await harness.StartConnected();
-        harness.Dispatcher.Dispatch(new ReviseChapterTwoAction(TextOf(20 * Megabyte), new string('n', 5 * Megabyte)));
+        harness.Dispatcher.Dispatch(new ReviseChapterTwoAction(TextOf(600 * Kilobyte), new string('n', 150 * Kilobyte)));
         await Harness.ActionsSent(connection, 1);
 
         connection.Close();
         await harness.AdvanceUntil(() => harness.Viewer.Connections.Count == 2);
 
         var next = Assert.IsType<Snapshot>(await harness.Viewer.Connections.Last().FirstMessage.WaitAsync(Wait.Timeout, Wait.CancellationToken));
-        Assert.Equal(20 * Megabyte, Assert.Single(next.Features, f => f.Name == "ChapterTwo").StateJson.Length);
+        Assert.Equal(600 * Kilobyte, Assert.Single(next.Features, f => f.Name == "ChapterTwo").StateJson.Length);
     }
 
     [Fact]
     public async Task A_Snapshot_still_over_the_limit_with_every_Feature_state_left_out_stops_the_Session_instead_of_looping()
     {
-        await using var harness = new Harness(types: [typeof(LongNamedFeature)]);
+        await using var harness = new Harness(types: [typeof(LongNamedFeature)], configure: UnderOneMegabyte);
         var connection = await harness.Start();
 
         harness.Viewer.ConnectGate.SetResult();
@@ -238,10 +248,10 @@ public static class ChapterReducers
 
 public record LongNamedState;
 
-/// <summary>A Feature whose name alone, at 33 MB, is over the Viewer's limit, so no Snapshot can fit.</summary>
+/// <summary>A Feature whose name alone, at 2 MB, is over a 1 MB message limit, so no Snapshot can fit.</summary>
 public class LongNamedFeature : Feature<LongNamedState>
 {
-    private static readonly string Name = new('n', 33 * 1024 * 1024);
+    private static readonly string Name = new('n', 2 * 1024 * 1024);
 
     public override string GetName() => Name;
 
