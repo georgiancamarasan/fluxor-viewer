@@ -166,7 +166,7 @@ Styling is Tailwind v4, utility classes in the markup with `@apply` only for rep
 
 ### Hosting
 
-`fluxor-viewer [--port 5299] [--history 1000]` binds to `localhost` only and prints the URL. There's no authentication; it's a local development tool. `--history` is read as the configuration key `history` (`HistoryLimit`); a value that isn't a whole number of at least 1 (or is above 2147483647) stops the Viewer before it listens: it writes one line to stderr, such as `--history must be a whole number of at least 1, not "<value>".`, and exits with code 1.
+`fluxor-viewer [--port 5299] [--history 1000]` binds to `localhost` only and prints the URL. There's no authentication; it's a local development tool. `--history` is read as the configuration key `history` (`HistoryLimit`); a bad value stops the Viewer before it listens: it writes one line to stderr and exits with code 1. A value that isn't a whole number of at least 1 says `--history must be a whole number of at least 1, not "<value>".`, and one above 2147483647 says `--history can be at most 2147483647, not "<value>".`
 
 ## InteractiveAuto notes
 
