@@ -109,13 +109,13 @@ public class ReconnectingTests
         var viewer = new FakeViewer { SnapshotFailure = new Microsoft.AspNetCore.SignalR.HubException(
             "An unexpected error occurred invoking 'Snapshot' on the server. HubException: FluxorViewer: wrong protocol version") };
         await using var harness = new Harness(viewer: viewer);
-        await harness.Start();
-        await Wait.Until(() => harness.Logs.Entries.Any(e => e.Level == LogLevel.Warning));
-
+        var first = await harness.Start();
+        await first.Disposed.WaitAsync(Wait.Timeout, Wait.Ct); // the rejected attempt is over
         viewer.SnapshotFailure = null;
-        harness.Time.Advance(TimeSpan.FromMinutes(1));
+
+        // Past the longest backoff: a retry would have to start within this step.
         harness.Dispatcher.Dispatch(new IncrementAction());
-        await Task.Delay(100, Wait.Ct);
+        harness.Time.Advance(TimeSpan.FromMinutes(1));
 
         Assert.Single(viewer.Connections);
     }
@@ -206,10 +206,10 @@ public class ReconnectingTests
         await harness.Start();
         await Wait.Until(() => harness.Logs.Entries.Any(e => e.Exception is HttpRequestException));
 
-        await harness.DisposeAsync().AsTask().WaitAsync(Wait.Timeout, Wait.Ct);
+        await harness.DisposeAsync().AsTask().WaitAsync(Wait.Timeout, Wait.Ct); // returns once the sender has stopped
         viewer.ConnectFailure = null;
-        harness.Time.Advance(TimeSpan.FromMinutes(1));
-        await Task.Delay(100, Wait.Ct);
+
+        harness.Time.Advance(TimeSpan.FromMinutes(1)); // past the longest backoff
 
         Assert.Single(viewer.Connections);
     }
