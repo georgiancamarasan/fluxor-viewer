@@ -136,6 +136,29 @@ public class SessionSelectionTests
     }
 
     [Fact]
+    public void When_WebAssembly_takes_over_on_reload_its_Session_is_followed_from_the_Server_one()
+    {
+        var server = Session(runtime: Runtime.Server);
+        selection.Update([server]);
+
+        var webAssembly = Session(runtime: Runtime.WebAssembly);
+        selection.Update([Disconnected(server), webAssembly]);
+
+        Assert.Equal(webAssembly.SessionId, selection.Selected);
+    }
+
+    [Fact]
+    public void A_WebAssembly_Session_from_another_app_is_not_followed_from_a_Server_one()
+    {
+        var server = Session(runtime: Runtime.Server);
+        selection.Update([server]);
+
+        selection.Update([Disconnected(server), Session(appName: "Other", runtime: Runtime.WebAssembly)]);
+
+        Assert.Equal(server.SessionId, selection.Selected);
+    }
+
+    [Fact]
     public void When_two_reloaded_tabs_arrive_together_the_first_to_arrive_is_followed()
     {
         var old = Session();

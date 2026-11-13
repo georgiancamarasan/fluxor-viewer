@@ -1,3 +1,4 @@
+using FluxorViewer.Protocol;
 using FluxorViewer.Server.Sessions;
 
 namespace FluxorViewer.Server.Components;
@@ -24,9 +25,9 @@ public sealed class SessionSelection
     {
         var current = sessions.FirstOrDefault(s => s.SessionId == Selected);
 
-        // Follow a reloaded Host app: the selected Session disconnected and a new one from the same Host app and Runtime arrived.
+        // Follow a reloaded Host app: the selected Session disconnected and a new one from the same Host app arrived.
         if (current is { Status: SessionStatus.Disconnected }
-            && sessions.FirstOrDefault(s => !known.Contains(s.SessionId) && s.AppName == current.AppName && s.Runtime == current.Runtime) is { } successor)
+            && sessions.FirstOrDefault(s => !known.Contains(s.SessionId) && s.AppName == current.AppName && CanFollow(current.Runtime, s.Runtime)) is { } successor)
             current = successor;
 
         if (current is null && sessions is [var only])
@@ -35,4 +36,7 @@ public sealed class SessionSelection
         Selected = current?.SessionId;
         known = [.. sessions.Select(s => s.SessionId)];
     }
+
+    // Under InteractiveAuto, WebAssembly takes over from the Server on a reload; never the other way round.
+    private static bool CanFollow(Runtime from, Runtime to) => from == to || (from, to) is (Runtime.Server, Runtime.WebAssembly);
 }
