@@ -28,8 +28,18 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
     /// <summary>How much the Viewer keeps: entries per Session's History, and disconnected Sessions.</summary>
     public SessionLimits Limits => limits;
 
-    /// <summary>Whether the Viewer has forgotten any Session since it started.</summary>
-    public bool HasForgotten { get { lock (gate) return hasForgotten; } }
+    /// <summary>
+    /// The Disconnected Session limit once the Viewer has forgotten a Session since it started, so the developer can be
+    /// told; null until then.
+    /// </summary>
+    public DisconnectedSessionLimit? ForgottenBeyond
+    {
+        get
+        {
+            lock (gate)
+                return hasForgotten ? limits.Disconnected : null;
+        }
+    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -83,8 +93,7 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
             // A late close from a replaced connection leaves the Session connected through the newer one.
             if (ReportedBy(connectionId) is { } session)
             {
-                session.Disconnect(++disconnects);
-                changes.Add(new SessionStatusChanged(session.SessionId, SessionStatus.Disconnected));
+                changes.Add(Disconnect(session));
                 changes.Add(ForgetPastLimit());
             }
             connections.Remove(connectionId);
@@ -134,10 +143,20 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
         return (added, new SessionAdded(snapshot.SessionId));
     }
 
+    /// <summary>Marks the Session disconnected as the latest of the disconnects so far.</summary>
+    /// <returns>The status change to raise.</returns>
+    private SessionStatusChanged Disconnect(KnownSession session)
+    {
+        session.Disconnect(++disconnects);
+        return new SessionStatusChanged(session.SessionId, SessionStatus.Disconnected);
+    }
+
     /// <summary>
-    /// Forgets the Session that disconnected longest ago if more are disconnected than the limit allows, logging it at
-    /// Debug; null if none was. One disconnect takes the count at most one past the limit.
+    /// Forgets the Session that disconnected longest ago if more are disconnected than the limit allows, records that
+    /// the Viewer has forgotten (<see cref="ForgottenBeyond"/>) and logs it at Debug. One disconnect takes the count at
+    /// most one past the limit.
     /// </summary>
+    /// <returns>The change to raise, like <see cref="FindOrAdd"/>'s; null if nothing was forgotten.</returns>
     private SessionForgotten? ForgetPastLimit()
     {
         var disconnected = sessions.Values.Where(s => s.ConnectionId is null).ToList();

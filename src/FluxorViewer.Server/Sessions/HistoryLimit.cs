@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using FluxorViewer.Server.CommandLine;
 
 namespace FluxorViewer.Server.Sessions;
 
@@ -11,13 +12,15 @@ public sealed record HistoryLimit(int Value)
     /// <summary>The limit when <see cref="Key"/> isn't set: 1,000 entries per Session.</summary>
     public static readonly HistoryLimit Default = new(1000);
 
+    private static readonly WholeNumberSetting Setting = new(Key, Minimum: 1, Default.Value);
+
     /// <summary>Reads the limit set by <see cref="Key"/>, or <see cref="Default"/> when it isn't set.</summary>
     /// <param name="error">Why the value can't be used, as one line for the developer; null when it can.</param>
     public static bool TryFrom(
         IConfiguration configuration, [NotNullWhen(true)] out HistoryLimit? limit, [NotNullWhen(false)] out string? error)
     {
-        (var value, error) = WholeNumberSetting.Read(configuration, Key, minimum: 1);
-        limit = error is null ? value is { } n ? new HistoryLimit(n) : Default : null;
+        (var value, error) = Setting.Read(configuration);
+        limit = value is { } entries ? new HistoryLimit(entries) : null;
         return limit is not null;
     }
 }

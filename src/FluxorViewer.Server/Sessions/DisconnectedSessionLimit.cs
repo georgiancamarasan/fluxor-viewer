@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using FluxorViewer.Server.CommandLine;
 
 namespace FluxorViewer.Server.Sessions;
 
@@ -11,13 +12,16 @@ public sealed record DisconnectedSessionLimit(int Value)
     /// <summary>The limit when <see cref="Key"/> isn't set: 10 disconnected Sessions.</summary>
     public static readonly DisconnectedSessionLimit Default = new(10);
 
-    /// <summary>Reads the limit set by <see cref="Key"/>, or <see cref="Default"/> when it isn't set. 0 forgets a Session as soon as it disconnects.</summary>
+    // 0 is allowed: a Session is forgotten as soon as it disconnects.
+    private static readonly WholeNumberSetting Setting = new(Key, Minimum: 0, Default.Value);
+
+    /// <summary>Reads the limit set by <see cref="Key"/>, or <see cref="Default"/> when it isn't set.</summary>
     /// <param name="error">Why the value can't be used, as one line for the developer; null when it can.</param>
     public static bool TryFrom(
         IConfiguration configuration, [NotNullWhen(true)] out DisconnectedSessionLimit? limit, [NotNullWhen(false)] out string? error)
     {
-        (var value, error) = WholeNumberSetting.Read(configuration, Key, minimum: 0);
-        limit = error is null ? value is { } n ? new DisconnectedSessionLimit(n) : Default : null;
+        (var value, error) = Setting.Read(configuration);
+        limit = value is { } sessions ? new DisconnectedSessionLimit(sessions) : null;
         return limit is not null;
     }
 }

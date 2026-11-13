@@ -1,5 +1,4 @@
 @* The toolbar's Session picker, newest first, with the selected Session's status dot. *@
-@using System.Globalization
 <label class="flex items-center gap-2">
     <span class="toolbar-label">Session</span>
     @if (Current is { } current)
@@ -22,7 +21,7 @@
         @* At the end, where the older Sessions would have been. *@
         @if (ForgottenBeyond is { } limit)
         {
-            <option disabled data-test="forgotten">Older disconnected Sessions forgotten · the Viewer keeps the last @limit.Value.ToString("#,0", CultureInfo.InvariantCulture)</option>
+            <option disabled data-test="forgotten">@ForgottenNote(limit)</option>
         }
     </select>
 </label>
@@ -41,6 +40,10 @@
     [Parameter] public EventCallback<Guid> SelectedChanged { get; set; }
 
     private ReceivedSession? Current => Sessions.FirstOrDefault(s => s.SessionId == Selected);
+
+    private static string ForgottenNote(DisconnectedSessionLimit limit) => limit.Value == 0
+        ? "Disconnected Sessions forgotten · the Viewer keeps none"
+        : $"Older disconnected Sessions forgotten · {LimitPhrase.KeepsTheLast(limit.Value)}";
 
     /// <summary>● or ○ keeps the status readable in the open list, where options can't be coloured.</summary>
     private static string Label(ReceivedSession session) =>

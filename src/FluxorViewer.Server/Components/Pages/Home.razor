@@ -9,7 +9,7 @@
 <div class="flex h-screen flex-col">
     <header class="flex flex-wrap items-center gap-4 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
         <SessionPicker Sessions="sessions" Selected="selection.Selected" SelectedChanged="Select"
-                       ForgottenBeyond="Registry.HasForgotten ? Registry.Limits.Disconnected : null" />
+                       ForgottenBeyond="Registry.ForgottenBeyond" />
         <FeaturePicker Features="features.Features" HasSession="selection.Selected is not null"
                        Selected="@features.Selected" SelectedChanged="SelectFeature" />
         <ClearButton Session="SelectedSession" Cleared="Clear" />
@@ -30,7 +30,7 @@
                 else
                 {
                     <ActionListPane List="actions" HasFeature="features.Selected is not null" SelectedChanged="StateHasChanged"
-                                    DiscardedBeyond="SelectedSession is { HasDiscarded: true } ? Registry.Limits.History : null" />
+                                    DiscardedBeyond="SelectedSession?.DiscardedBeyond" />
                 }
             </section>
             <section class="flex min-h-0 min-w-0 flex-1 flex-col">

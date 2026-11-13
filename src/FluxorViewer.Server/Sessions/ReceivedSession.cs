@@ -23,8 +23,11 @@ public sealed record ReceivedSession(
     /// <summary>Whether the Viewer currently has a connection for the Session.</summary>
     public SessionStatus Status => ConnectionId is null ? SessionStatus.Disconnected : SessionStatus.Connected;
 
+    /// <summary>The History limit once older entries were discarded to keep within it, since the last Clear; null until then.</summary>
+    public HistoryLimit? DiscardedBeyond { get; init; }
+
     /// <summary>Whether older entries were discarded to keep the History within its limit, since the last Clear.</summary>
-    public bool HasDiscarded { get; init; }
+    public bool HasDiscarded => DiscardedBeyond is not null;
 
     /// <summary>The Actions in the History, oldest first, without its Resyncs.</summary>
     public IEnumerable<ActionEntry> Actions => History.OfType<ActionEntry>();

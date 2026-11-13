@@ -30,14 +30,16 @@ public class DisconnectedSessionLimitTests
     private static Guid[] Kept(Viewer viewer) => [.. viewer.Registry.GetSessions().Select(s => s.SessionId)];
 
     [Fact]
-    public async Task By_default_the_Viewer_keeps_10_disconnected_Sessions()
+    public async Task By_default_12_disconnects_forget_the_2_Sessions_that_disconnected_first_and_leave_connected_ones()
     {
         await using var viewer = new Viewer();
-        var sessionIds = await ReportAndDisconnectAsync(viewer, 10);
+        await using var connection = await viewer.ConnectAsync();
+        var connected = Guid.NewGuid();
+        await connection.InvokeAsync("Snapshot", NewSnapshot(connected), Wait.CancellationToken);
 
-        var eleventh = await ReportAndDisconnectAsync(viewer);
+        var disconnected = await ReportAndDisconnectAsync(viewer, 12);
 
-        Assert.Equal([.. sessionIds[1..], eleventh], Kept(viewer));
+        Assert.Equal([connected, .. disconnected[2..]], Kept(viewer));
     }
 
     [Fact]

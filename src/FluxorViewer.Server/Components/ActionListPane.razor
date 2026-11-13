@@ -1,5 +1,4 @@
 @* The Action list: a filterable, virtualised list of the selected Session's History, which follows the newest entry until the developer selects an older one. *@
-@using System.Globalization
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @implements IAsyncDisposable
 @inject IJSRuntime JS
@@ -19,7 +18,7 @@
 @if (DiscardedBeyond is { } limit)
 {
     <p class="muted border-b border-zinc-200 px-3 py-1 text-xs dark:border-zinc-800" data-test="discarded">
-        Older entries discarded · the Viewer keeps the last @limit.Value.ToString("#,0", CultureInfo.InvariantCulture) per Session
+        Older entries discarded · @LimitPhrase.KeepsTheLast(limit.Value) per Session
     </p>
 }
 

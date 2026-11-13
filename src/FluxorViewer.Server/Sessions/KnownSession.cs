@@ -97,7 +97,7 @@ internal sealed class KnownSession(Snapshot firstSnapshot, long seenOrder, Histo
     public ReceivedSession ToView() => new(
         SessionId, firstSnapshot.AppName, firstSnapshot.Runtime, firstSnapshot.StartedAt, ConnectionId, [.. history], Current, LastSequence)
     {
-        HasDiscarded = HasDiscarded,
+        DiscardedBeyond = HasDiscarded ? limit : null,
     };
 
     /// <summary>

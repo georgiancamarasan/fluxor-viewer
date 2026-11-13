@@ -1,5 +1,4 @@
 using FluxorViewer.Server.Sessions;
-using Microsoft.Extensions.Logging.Abstractions;
 
 using static FluxorViewer.Server.Tests.Messages;
 
@@ -9,123 +8,114 @@ namespace FluxorViewer.Server.Tests;
 // disconnected longest ago.
 public class ForgettingTests
 {
-    private SessionRegistry registry = WithLimit(2);
+    private SessionRegistry registry = null!;
+    private NamedSessions sessions = null!;
 
-    private static SessionRegistry WithLimit(int disconnected) => new(
-        NullLogger<SessionRegistry>.Instance, TimeProvider.System, SessionLimits.Default with { Disconnected = new DisconnectedSessionLimit(disconnected) });
+    public ForgettingTests() => UseLimit(2);
 
-    /// <summary>Starts a Session reported on a connection named after <paramref name="name"/>.</summary>
-    private Guid Start(string name)
+    private void UseLimit(int disconnected)
     {
-        var sessionId = Guid.NewGuid();
-        registry.SnapshotReceived(name, NewSnapshot(sessionId));
-        return sessionId;
+        registry = NamedSessions.Registry(disconnected);
+        sessions = new NamedSessions(registry);
     }
-
-    private void Disconnect(string name) => registry.ConnectionClosed(name);
-
-    private Guid[] Kept() => [.. registry.GetSessions().Select(s => s.SessionId)];
 
     [Fact]
     public void A_disconnect_past_the_limit_forgets_the_Session_that_disconnected_longest_ago()
     {
-        var a = Start("a");
-        var b = Start("b");
-        var c = Start("c");
-        Disconnect("b");
-        Disconnect("a");
+        sessions.Start("first", "second", "third");
+        sessions.Disconnect("second", "first");
 
-        Disconnect("c");
+        sessions.Disconnect("third");
 
-        Assert.Equal([a, c], Kept());
+        Assert.Equal(["first", "third"], sessions.Kept());
     }
 
     [Fact]
     public void Connected_Sessions_do_not_count_and_are_never_forgotten()
     {
-        var a = Start("a");
-        var b = Start("b");
-        var c = Start("c");
-        var d = Start("d");
+        sessions.Start("first", "second", "third", "connected");
+        sessions.Disconnect("first", "second");
 
-        Disconnect("a");
-        Disconnect("b");
+        sessions.Disconnect("third");
 
-        Assert.Equal([a, b, c, d], Kept());
+        Assert.Equal(["second", "third", "connected"], sessions.Kept());
     }
 
     [Fact]
     public void A_Session_that_reconnects_counts_from_its_latest_disconnect()
     {
-        var a = Start("a");
-        var b = Start("b");
-        var c = Start("c");
-        Disconnect("a");
-        Disconnect("b");
-        registry.SnapshotReceived("a2", NewSnapshot(a));
-        Disconnect("a2");
+        sessions.Start("first", "second", "third");
+        sessions.Disconnect("first", "second");
+        registry.SnapshotReceived("first again", NewSnapshot(sessions["first"]));
+        sessions.Disconnect("first again");
 
-        Disconnect("c");
+        sessions.Disconnect("third");
 
-        Assert.Equal([a, c], Kept());
+        Assert.Equal(["first", "third"], sessions.Kept());
     }
 
     [Fact]
     public void With_a_limit_of_0_a_Session_is_forgotten_as_soon_as_it_disconnects()
     {
-        registry = WithLimit(0);
-        Start("a");
-        var b = Start("b");
+        UseLimit(0);
+        sessions.Start("first", "second");
 
-        Disconnect("a");
+        sessions.Disconnect("first");
 
-        Assert.Equal([b], Kept());
+        Assert.Equal(["second"], sessions.Kept());
     }
 
     [Fact]
-    public void A_forgotten_Session_that_reconnects_comes_back_as_a_new_Session_from_its_Snapshot()
+    public void A_forgotten_Session_that_reconnects_comes_back_as_a_new_Session_losing_only_its_dropped_Actions()
     {
-        registry = WithLimit(0);
-        var a = Start("a");
-        registry.ActionsReceived("a", Increments(a, 1, 3));
-        Disconnect("a");
+        UseLimit(0);
+        sessions.Start("first");
+        var sessionId = sessions["first"];
+        registry.ActionsReceived("first", Increments(sessionId, 1, 3));
+        sessions.Disconnect("first");
+        List<SessionChange> changes = [];
+        registry.Changed += changes.Add;
 
-        registry.SnapshotReceived("a2", NewSnapshot(a) with { LastSequence = 5, Features = [Counter(5)] });
+        registry.SnapshotReceived("first again", NewSnapshot(sessionId) with { LastSequence = 5, DroppedCount = 1, Features = [Counter(5)] });
 
-        var session = registry.Find(a)!;
-        Assert.Equal(SessionStatus.Connected, session.Status);
-        Assert.Empty(session.Actions);
-        Assert.Equal("""{"Count":5}""", session.Current["Counter"].StateJson);
+        Assert.Equal([new SessionAdded(sessionId), new EntriesAppended(sessionId, 1)], changes);
+        var resync = Assert.IsType<ResyncEntry>(Assert.Single(registry.Find(sessionId)!.History));
+        Assert.Equal(1, resync.Lost);
     }
 
     [Fact]
     public void Forgetting_is_raised_after_the_disconnect_that_caused_it()
     {
-        Start("a");
-        var b = Start("b");
-        var c = Start("c");
-        Disconnect("b");
-        Disconnect("a");
+        sessions.Start("first", "second", "third");
+        sessions.Disconnect("second", "first");
         List<SessionChange> changes = [];
         registry.Changed += changes.Add;
 
-        Disconnect("c");
+        sessions.Disconnect("third");
 
-        Assert.Equal([new SessionStatusChanged(c, SessionStatus.Disconnected), new SessionForgotten(b)], changes);
+        Assert.Equal(
+            [new SessionStatusChanged(sessions["third"], SessionStatus.Disconnected), new SessionForgotten(sessions["second"])],
+            changes);
     }
 
     [Fact]
-    public void The_Viewer_remembers_it_has_forgotten_until_it_restarts_whatever_is_cleared()
+    public void Until_a_Session_is_forgotten_the_Viewer_has_none_to_tell_of()
     {
-        var a = Start("a");
-        Start("b");
-        Start("c");
-        Disconnect("a");
-        Disconnect("b");
+        sessions.Start("first", "second");
 
-        Disconnect("c");
-        registry.Clear(a);
+        sessions.Disconnect("first", "second");
 
-        Assert.True(registry.HasForgotten);
+        Assert.Null(registry.ForgottenBeyond);
+    }
+
+    [Fact]
+    public void Once_a_Session_is_forgotten_the_Viewer_tells_of_it_with_its_limit_until_it_restarts_whatever_is_cleared()
+    {
+        sessions.Start("first", "second", "third");
+        sessions.Disconnect("first", "second", "third");
+
+        registry.Clear(sessions["second"]);
+
+        Assert.Equal(new DisconnectedSessionLimit(2), registry.ForgottenBeyond);
     }
 }
