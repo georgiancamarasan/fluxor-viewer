@@ -5,7 +5,7 @@ A developer debugging tool: an app using Fluxor reports what happens to its stat
 ## Language
 
 **Host app**:
-The application using Fluxor that reports its Sessions to the Viewer, identified to the Viewer by its app name; one Host app can produce many Sessions.
+The application using Fluxor that reports its Sessions to the Viewer, identified to the Viewer by its app name; one Host app can produce many Sessions, in either Runtime or both.
 _Avoid_: Client, target, app (on its own)
 
 **Session**:

@@ -132,7 +132,7 @@ Why changed-Features-only plus Snapshots instead of full state every time: see [
 
 - **Session picker**: all Sessions as "AppName · Runtime · shortId", newest first (most recently seen by the Viewer), marked ●/○ with a green/grey dot for connected/disconnected. The selection belongs to the Viewer tab and follows these rules (`SessionSelection`):
   - Whenever nothing is selected and exactly one Session exists, it's selected. If the selected Session is removed, the selection empties and this applies again; with several Sessions and none selected, the panes say "Pick a Session".
-  - If the selected Session is disconnected and a new Session with the same app name and Runtime arrives, the picker switches to it, so reloading the host app keeps you on it. A Server Session never takes over from a WebAssembly one.
+  - If the selected Session is disconnected and a new Session with the same app name and Runtime arrives, the picker switches to it, so reloading the host app keeps you on it. Under InteractiveAuto a WebAssembly Session also takes over from a disconnected Server Session of the same app, since a reload is when WebAssembly takes over; a Server Session never takes over from a WebAssembly one.
   - With no Sessions, the page shows "Waiting for a Host app to connect…" and a `UseFluxorViewer` snippet with this Viewer's URL.
 - **Feature picker**: Features of the selected Session (the keys of its current map), alphabetically ignoring case. The developer's last explicit pick is remembered by name for the Viewer tab and selected in any Session that has it, however the Session changed; otherwise the first Feature is selected, without forgetting the pick (`FeatureSelection`). Disabled with no Session selected, and shows "No Features" for a Session without any.
 - **Action list**: every Action, oldest first, as sequence · Action type short name · local time `HH:mm:ss.fff`, virtualised with a fixed row height (`ActionList`). The short name is the last segment of the readable type name the middleware sends, in generic arguments too (`LoadedAction<Item>`); a nested type's enclosing type can't be told apart from a namespace, so it's dropped as well, and the full name shows on hover.
@@ -171,6 +171,8 @@ Styling is Tailwind v4, utility classes in the markup with `@apply` only for rep
 ## InteractiveAuto notes
 
 - Prerendering doesn't start the store (Fluxor's `StoreInitializer` initialises after first render), so no Session is created for prerender.
+- `AppName` defaults to the entry assembly, which differs between the halves (`MyApp` and `MyApp.Client`), so an InteractiveAuto app sets it explicitly in its shared registration to show as one Host app.
+- WebAssembly takes over on the next page load once it's downloaded: the first visit runs a Server circuit for the whole tab. On that reload the circuit ends (Blazor's disconnect beacon; if that's lost, Blazor keeps the circuit, and its Session connected, for up to 3 minutes).
 - One tab may produce a Server Session and later a WebAssembly Session. They are deliberately separate Sessions ([ADR 0004](adr/0004-separate-sessions-per-store-under-interactive-auto.md)).
 - Blazor Server: one Session (and one hub connection) per circuit.
 
