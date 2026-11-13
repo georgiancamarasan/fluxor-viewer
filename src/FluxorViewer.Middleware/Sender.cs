@@ -97,7 +97,7 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
         Snapshot snapshot;
         try
         {
-            snapshot = WireJson.Fit(Messages.Snapshot(session, baseCopy, json), json);
+            snapshot = Messages.Snapshot(session, baseCopy, json);
         }
         catch (Exception ex)
         {
@@ -124,11 +124,12 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
     {
         try
         {
-            return WireJson.Fit(Messages.ActionRecorded(session, action, json), json);
+            return Messages.ActionRecorded(session, action, json);
         }
         catch (Exception ex)
         {
-            // A value that won't serialise is already a Serialisation error; this is anything else, e.g. a Feature's name.
+            // A value that won't serialise or fit is already a Serialisation error; this is anything else, e.g. a Feature's
+            // name, or a message still over the Viewer's limit with every value left out.
             context.Logger.LogWarning(ex, "FluxorViewer: could not build Action {Sequence} ({ActionType}); skipped.",
                 action.Sequence, action.Action.GetType());
             return null;

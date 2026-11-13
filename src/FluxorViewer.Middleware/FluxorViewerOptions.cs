@@ -78,7 +78,7 @@ public sealed class FluxorViewerOptions
             yield return Problem.OutOfRange(nameof(MaxDepth), MaxDepth, $"MaxDepth must be between 1 and {JsonLimits.MaxDepth}, but was {MaxDepth}.");
         if (MaxValueSize is < 1 or > JsonLimits.MaxMessageSize)
             yield return Problem.OutOfRange(nameof(MaxValueSize), MaxValueSize,
-                $"MaxValueSize must be between 1 and {JsonLimits.MaxMessageSize} bytes (32 MB), but was {MaxValueSize}.");
+                $"MaxValueSize must be between 1 and {JsonLimits.MaxMessageSize} bytes ({ByteSize.Readable(JsonLimits.MaxMessageSize)}), but was {MaxValueSize}.");
     }
 
     private static bool IsHttpUrl(string url) =>

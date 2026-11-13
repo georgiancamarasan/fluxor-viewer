@@ -26,19 +26,27 @@ public class MessageSizeEndToEndTests(Viewer viewer) : IClassFixture<Viewer>
         return services.BuildServiceProvider();
     }
 
-    /// <summary>Starts the store and waits for its Session to reach the Viewer.</summary>
-    private async Task<Guid> Started(ServiceProvider provider, string appName)
+    /// <summary>Starts the store, waits for its Session to reach the Viewer, and returns its SessionId.</summary>
+    private async Task<Guid> StartSession(ServiceProvider provider, string appName)
     {
         await provider.GetRequiredService<IStore>().InitializeAsync();
         await Wait.Until(() => viewer.Registry.GetSessions().Any(s => s.AppName == appName));
         return viewer.Registry.GetSessions().Single(s => s.AppName == appName).SessionId;
     }
 
+    /// <summary>Dispatches <paramref name="count"/> Notes of <paramref name="length"/> characters each.</summary>
+    private static void DispatchNotes(ServiceProvider provider, int count, int length)
+    {
+        var dispatcher = provider.GetRequiredService<IDispatcher>();
+        for (var i = 0; i < count; i++)
+            dispatcher.Dispatch(new NoteAction(new string('a', length)));
+    }
+
     [Fact]
     public async Task A_16_MB_Feature_state_made_of_quotes_reaches_the_Viewer_whole()
     {
         await using var provider = Store("QuoteHeavy");
-        var sessionId = await Started(provider, "QuoteHeavy");
+        var sessionId = await StartSession(provider, "QuoteHeavy");
 
         provider.GetRequiredService<IDispatcher>().Dispatch(new FillAction(4_000_000)); // ["a","a",…]: half of it quotes
 
@@ -54,9 +62,7 @@ public class MessageSizeEndToEndTests(Viewer viewer) : IClassFixture<Viewer>
         await down.DisposeAsync();
         await using var provider = Store("Backlog", down.BaseAddress);
         await provider.GetRequiredService<IStore>().InitializeAsync();
-        var dispatcher = provider.GetRequiredService<IDispatcher>();
-        for (var i = 0; i < 8; i++)
-            dispatcher.Dispatch(new NoteAction(new string('a', 5 * 1024 * 1024)));
+        DispatchNotes(provider, 8, 5 * 1024 * 1024);
 
         await using var up = new Viewer(down.BaseAddress.Port);
 

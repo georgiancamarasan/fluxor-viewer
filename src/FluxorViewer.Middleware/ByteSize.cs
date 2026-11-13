@@ -8,6 +8,7 @@ internal static class ByteSize
     private const double Kilobyte = 1024;
     private const double Megabyte = 1024 * Kilobyte;
 
+    /// <summary><paramref name="bytes"/> in bytes below 1 KB, else in KB or MB (of 1024) to one decimal place, dropping <c>.0</c>.</summary>
     public static string Readable(long bytes) => bytes switch
     {
         < (long)Kilobyte => $"{bytes} bytes",

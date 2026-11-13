@@ -9,10 +9,11 @@ namespace FluxorViewer.Middleware;
 
 /// <summary>
 /// Serialises one Payload or Feature state for the Viewer, sending a Serialisation error, exactly
-/// <c>{"$error": "message"}</c>, in its place if it won't serialise or its JSON is over <c>MaxValueSize</c>. Each failing
-/// Action type or Feature is logged at Warning once per process (a Blazor Server app has many Sessions), then at Debug.
+/// <c>{"$error": "message"}</c>, in its place if it won't serialise, its JSON is over <c>MaxValueSize</c>, or it's left
+/// out to keep its message under the Viewer's limit. Each problem is logged at Warning once per process for each Action
+/// type or Feature it happens to (a Blazor Server app has many Sessions), then at Debug.
 /// </summary>
-internal sealed class ViewerJson(FluxorViewerOptions settings, ILogger logger)
+internal sealed class ViewerJson(FluxorViewerOptions options, ILogger logger)
 {
     /// <summary>Longer Serialisation error messages are cut to this and end in <c>…</c>.</summary>
     internal const int MaxErrorLength = 500;
@@ -20,43 +21,54 @@ internal sealed class ViewerJson(FluxorViewerOptions settings, ILogger logger)
     // Each problem (its log message) with each subject is logged at Warning once.
     private static readonly ConcurrentDictionary<(string Message, string Subject), bool> Warned = new();
 
-    private readonly JsonSerializerOptions options = new()
+    private readonly JsonSerializerOptions serializerOptions = new()
     {
         ReferenceHandler = ReferenceHandler.IgnoreCycles,
-        MaxDepth = settings.MaxDepth,
+        MaxDepth = options.MaxDepth,
     };
+
+    /// <summary>What the log calls an Action type, by its readable name (<see cref="TypeNames.Readable"/>).</summary>
+    public static string ActionSubject(string actionType) => $"Action {actionType}";
+
+    /// <summary>What the log calls a Feature, by its name.</summary>
+    public static string FeatureSubject(string featureName) => $"Feature {featureName}";
 
     public string Payload(object action)
     {
         var type = action.GetType();
-        return Serialise(action, type, $"Action {TypeNames.Readable(type)}");
+        return Serialise(action, type, ActionSubject(TypeNames.Readable(type)));
     }
 
     public string FeatureState(string featureName, object? state, Type stateType) =>
-        Serialise(state, stateType, $"Feature {featureName}");
+        Serialise(state, stateType, FeatureSubject(featureName));
 
     private string Serialise(object? value, Type type, string subject)
     {
-        CappedBuffer buffer;
         try
         {
-            buffer = Write(value, type);
+            var buffer = Write(value, type);
+            if (buffer.IsOverCap)
+                return OverMaxValueSize(subject, buffer.Length);
+            // A write that might have crossed the cap wasn't kept, but it didn't: within the cap, so write it again in full.
+            return buffer.IsComplete ? buffer.Text : JsonSerializer.Serialize(value, type, serializerOptions);
         }
         catch (Exception ex)
         {
             Log(subject, ex, "FluxorViewer: could not serialise {Subject}; sent a Serialisation error instead.");
             return Error(Describe(ex));
         }
+    }
 
-        if (!buffer.IsOverCap)
-            return buffer.Text;
+    private string OverMaxValueSize(string subject, long size)
+    {
         Log(subject, null, "FluxorViewer: {Subject} is larger than MaxValueSize; sent a Serialisation error instead.");
-        return Error($"Larger than MaxValueSize ({ByteSize.Readable(settings.MaxValueSize)}): {ByteSize.Readable(buffer.Length)}");
+        return Error($"Larger than MaxValueSize ({ByteSize.Readable(options.MaxValueSize)}): {ByteSize.Readable(size)}");
     }
 
     /// <summary>
     /// The Serialisation error sent in place of <paramref name="valueJson"/>, a value of <paramref name="subject"/> (e.g.
     /// <c>Feature Todos</c>) left out to keep its message under the Viewer's limit; logged once per subject at Warning.
+    /// The size it names is the value's JSON in UTF-8, as for <c>MaxValueSize</c>, not its encoded size in the message.
     /// </summary>
     public string LeftOut(string subject, string valueJson)
     {
@@ -67,9 +79,9 @@ internal sealed class ViewerJson(FluxorViewerOptions settings, ILogger logger)
 
     private CappedBuffer Write(object? value, Type type)
     {
-        var buffer = new CappedBuffer(settings.MaxValueSize);
-        using var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { MaxDepth = options.MaxDepth });
-        JsonSerializer.Serialize(writer, value, type, options);
+        var buffer = new CappedBuffer(options.MaxValueSize);
+        using var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { MaxDepth = serializerOptions.MaxDepth });
+        JsonSerializer.Serialize(writer, value, type, serializerOptions);
         return buffer;
     }
 
@@ -89,7 +101,7 @@ internal sealed class ViewerJson(FluxorViewerOptions settings, ILogger logger)
     private string Describe(Exception ex) =>
         // With IgnoreCycles on, this "possible object cycle" can only be depth, and its advice (ReferenceHandler.Preserve)
         // isn't the developer's to take. System.Text.Json's messages aren't localised, so matching the text is safe.
-        ex is JsonException { Path: var path } && ex.Message.Contains($"maximum allowed depth of {settings.MaxDepth}")
-            ? $"Nested deeper than MaxDepth ({settings.MaxDepth}) at {path}"
+        ex is JsonException { Path: var path } && ex.Message.Contains($"maximum allowed depth of {options.MaxDepth}")
+            ? $"Nested deeper than MaxDepth ({options.MaxDepth}) at {path}"
             : ex.Message;
 }

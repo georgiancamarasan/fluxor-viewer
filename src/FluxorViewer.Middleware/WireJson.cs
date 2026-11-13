@@ -1,3 +1,6 @@
+using System.Buffers;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using FluxorViewer.Protocol;
 using Microsoft.AspNetCore.SignalR;
@@ -5,8 +8,8 @@ using Microsoft.AspNetCore.SignalR;
 namespace FluxorViewer.Middleware;
 
 /// <summary>
-/// The JSON the hub connection sends messages in, and their sizes in it, so the sender can keep each message under the
-/// Viewer's limit (<see cref="JsonLimits.MaxMessageSize"/>).
+/// Keeps each message under the Viewer's limit (<see cref="JsonLimits.MaxMessageSize"/>): measures messages as the hub
+/// connection sends them, splits Actions between calls, and shrinks a message that's over it on its own.
 /// </summary>
 internal static class WireJson
 {
@@ -23,18 +26,25 @@ internal static class WireJson
     /// </summary>
     public static JsonSerializerOptions Options { get; } = new JsonHubProtocolOptions().PayloadSerializerOptions;
 
-    /// <summary>How many bytes <paramref name="message"/> takes in <see cref="Options"/>, measured without keeping them.</summary>
-    public static long Size<T>(T message)
-    {
-        var counter = new CappedBuffer(0);
-        using (var writer = new Utf8JsonWriter(counter, new JsonWriterOptions { Encoder = Options.Encoder }))
-            JsonSerializer.Serialize(writer, message, Options);
-        return counter.Length;
-    }
+    private static readonly JavaScriptEncoder Encoder = Options.Encoder ?? JavaScriptEncoder.Default;
+
+    private static readonly Shape<Snapshot> SnapshotShape = new(
+        snapshot => snapshot.Features.Select(f => new MessageValue(ViewerJson.FeatureSubject(f.Name), f.StateJson)).ToList(),
+        (snapshot, json) => snapshot with { Features = snapshot.Features.Select((f, i) => f with { StateJson = json[i] }).ToList() });
+
+    // An Action's Payload comes first, then its Changed Features' states.
+    private static readonly Shape<ActionRecorded> ActionShape = new(
+        action => action.ChangedFeatures.Select(f => new MessageValue(ViewerJson.FeatureSubject(f.Name), f.StateJson))
+            .Prepend(new MessageValue(ViewerJson.ActionSubject(action.ActionType), action.Payload)).ToList(),
+        (action, json) => action with
+        {
+            Payload = json[0],
+            ChangedFeatures = action.ChangedFeatures.Select((f, i) => f with { StateJson = json[i + 1] }).ToList(),
+        });
 
     /// <summary>
-    /// <paramref name="actions"/> in order, in as few parts as fit <see cref="Budget"/>, at most
-    /// <see cref="ActionBuffer.MaxBatchSize"/> each. An Action too large on its own goes in a part by itself.
+    /// <paramref name="actions"/> in order, in as few parts as fit <see cref="Budget"/>; an Action too large on its own
+    /// goes in a part by itself. Parts only divide what they're given, so never hold more Actions than it.
     /// </summary>
     public static IEnumerable<IReadOnlyList<ActionRecorded>> Split(IEnumerable<ActionRecorded> actions)
     {
@@ -42,7 +52,7 @@ internal static class WireJson
         long size = 0;
         foreach (var action in actions)
         {
-            var actionSize = Size(action) + 1; // and the comma between it and the next
+            var actionSize = Size(action, ActionShape) + 1; // and the comma between it and the next
             if (part.Count > 0 && size + actionSize > Budget)
             {
                 yield return part;
@@ -61,50 +71,79 @@ internal static class WireJson
     /// <paramref name="snapshot"/>, or if it's over <see cref="Budget"/>, a copy with its largest Feature states left out
     /// (as Serialisation errors from <paramref name="json"/>, which logs them) until it fits.
     /// </summary>
-    public static Snapshot Fit(Snapshot snapshot, ViewerJson json)
-    {
-        var size = Size(snapshot);
-        if (size <= Budget)
-            return snapshot;
-        var states = LeaveOutLargest(size, snapshot.Features.Select(f => new Value($"Feature {f.Name}", f.StateJson)).ToList(), json);
-        return snapshot with { Features = snapshot.Features.Select((f, i) => f with { StateJson = states[i] }).ToList() };
-    }
+    /// <exception cref="InvalidOperationException">It's still over with every Feature state left out.</exception>
+    public static Snapshot Fit(Snapshot snapshot, ViewerJson json) => Fit(snapshot, SnapshotShape, json);
 
     /// <summary>
     /// <paramref name="action"/>, or if it's over <see cref="Budget"/> on its own, a copy with its largest values (its
-    /// Payload and Changed Features alike) left out (as Serialisation errors from <paramref name="json"/>, which logs them)
-    /// until it fits.
+    /// Payload and Changed Features alike) left out (as Serialisation errors from <paramref name="json"/>, which logs
+    /// them) until it fits.
     /// </summary>
-    public static ActionRecorded Fit(ActionRecorded action, ViewerJson json)
+    /// <exception cref="InvalidOperationException">It's still over with every value left out.</exception>
+    public static ActionRecorded Fit(ActionRecorded action, ViewerJson json) => Fit(action, ActionShape, json);
+
+    private static T Fit<T>(T message, Shape<T> shape, ViewerJson json)
     {
-        var size = Size(action);
-        if (size <= Budget)
-            return action;
-        var values = action.ChangedFeatures.Select(f => new Value($"Feature {f.Name}", f.StateJson))
-            .Prepend(new Value($"Action {action.ActionType}", action.Payload)).ToList();
-        var fitted = LeaveOutLargest(size, values, json);
-        return action with
-        {
-            Payload = fitted[0],
-            ChangedFeatures = action.ChangedFeatures.Select((f, i) => f with { StateJson = fitted[i + 1] }).ToList(),
-        };
+        var size = Size(message, shape);
+        return size <= Budget ? message : shape.With(message, LeaveOutLargest(size, shape.Values(message), json));
     }
 
     /// <summary>The JSON of <paramref name="values"/>, the largest left out until a message of <paramref name="size"/> fits.</summary>
-    private static string[] LeaveOutLargest(long size, IReadOnlyList<Value> values, ViewerJson json)
+    private static string[] LeaveOutLargest(long size, IReadOnlyList<MessageValue> values, ViewerJson json)
     {
         var fitted = values.Select(v => v.Json).ToArray();
-        foreach (var (index, valueSize) in values.Select((v, i) => (i, Size(v.Json))).OrderByDescending(v => v.Item2))
+        var largestFirst = values.Select((value, index) => (Index: index, Size: EncodedSize(value.Json))).OrderByDescending(v => v.Size);
+        foreach (var (index, valueSize) in largestFirst)
         {
             if (size <= Budget)
                 break;
             fitted[index] = json.LeftOut(values[index].Subject, values[index].Json);
-            size += Size(fitted[index]) - valueSize;
+            size += EncodedSize(fitted[index]) - valueSize;
         }
 
-        return fitted;
+        return size <= Budget
+            ? fitted
+            : throw new InvalidOperationException(
+                $"The message is over the Viewer's {ByteSize.Readable(JsonLimits.MaxMessageSize)} limit even with every Payload and Feature state left out.");
+    }
+
+    /// <summary>
+    /// How many bytes <paramref name="message"/> takes in <see cref="Options"/>: its envelope, serialised with its values
+    /// emptied, plus each value's encoded size, so no value is copied to measure it.
+    /// </summary>
+    private static long Size<T>(T message, Shape<T> shape)
+    {
+        var values = shape.Values(message);
+        var envelope = shape.With(message, values.Select(_ => "").ToList());
+        return JsonSerializer.SerializeToUtf8Bytes(envelope, Options).LongLength + values.Sum(v => EncodedSize(v.Json));
+    }
+
+    /// <summary>How many UTF-8 bytes <paramref name="value"/> takes inside a JSON string in <see cref="Options"/>, encoded a chunk at a time.</summary>
+    private static long EncodedSize(string value)
+    {
+        var chunk = ArrayPool<char>.Shared.Rent(16 * 1024);
+        try
+        {
+            long size = 0;
+            var rest = value.AsSpan();
+            while (true)
+            {
+                var status = Encoder.Encode(rest, chunk, out var read, out var written, isFinalBlock: true);
+                size += Encoding.UTF8.GetByteCount(chunk.AsSpan(0, written));
+                rest = rest[read..];
+                if (status != OperationStatus.DestinationTooSmall)
+                    return size;
+            }
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(chunk);
+        }
     }
 
     /// <summary>A Payload or Feature state in a message, and what it belongs to, for the log.</summary>
-    private sealed record Value(string Subject, string Json);
+    private sealed record MessageValue(string Subject, string Json);
+
+    /// <summary>How to read a kind of message's values, in order, and copy it with new ones.</summary>
+    private sealed record Shape<T>(Func<T, IReadOnlyList<MessageValue>> Values, Func<T, IReadOnlyList<string>, T> With);
 }
