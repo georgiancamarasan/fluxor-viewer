@@ -10,6 +10,11 @@ namespace FluxorViewer.Server.Sessions;
 /// History may hold Actions with the same Sequence twice.
 /// </param>
 /// <param name="Sequence">The Action's Sequence, or the Snapshot's <c>LastSequence</c> for a Resync.</param>
+/// <remarks>
+/// There are exactly two kinds, <see cref="ActionEntry"/> and <see cref="ResyncEntry"/>, and callers that treat them
+/// differently (the Action list, the State and Diff tabs) pattern-match on them. That is deliberate: what a row says or
+/// a tab shows is the UI's business, so it stays in the components rather than becoming virtual members here.
+/// </remarks>
 public abstract record HistoryEntry(long Id, long Sequence, ImmutableDictionary<string, FeatureState> After);
 
 /// <summary>An Action in the History.</summary>
