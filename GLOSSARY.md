@@ -53,8 +53,8 @@ The most entries the Viewer keeps in a Session's History; once it's reached, the
 _Avoid_: Cap, buffer size, max history
 
 **Dropped Action**:
-An Action the Host app recorded but never sent, because its buffer was full while it couldn't send fast enough or at all; the Viewer counts it among the lost Actions of the next Resync.
-_Avoid_: Discarded, evicted, overflowed
+An Action the Host app recorded but never sent, because its buffer was full while it couldn't send fast enough or at all, or because it couldn't be turned into a message; the Viewer counts it among the lost Actions of the next Resync.
+_Avoid_: Discarded, evicted, overflowed, skipped
 
 **Ignored Action**:
 An Action the Host app was configured not to report; it never reaches the Viewer and takes no Sequence, and the state it changed is reported with the next reported Action. Unlike a Dropped Action, it causes no Resync.
