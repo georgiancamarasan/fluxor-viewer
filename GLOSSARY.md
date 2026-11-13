@@ -56,12 +56,16 @@ _Avoid_: Cap, buffer size, max history
 An Action the Host app recorded but never sent, because its buffer was full while it couldn't send fast enough or at all; the Viewer counts it among the lost Actions of the next Resync.
 _Avoid_: Discarded, evicted, overflowed
 
+**Ignored Action**:
+An Action the Host app was configured not to report; it never reaches the Viewer and takes no Sequence, and the state it changed is reported with the next reported Action. Unlike a Dropped Action, it causes no Resync.
+_Avoid_: Filtered, hidden, muted, skipped
+
 **Sequence**:
 The position of an Action in its Session's history, counting from 1; a gap means Actions were lost.
 _Avoid_: Index, id, counter
 
 **Changed Feature**:
-A Feature whose state an Action replaced, even if the new state looks identical to the old one.
+A Feature whose state was replaced since the previous reported Action, by that Action or by Ignored Actions before it, even if the new state looks identical to the old one.
 _Avoid_: Dirty, touched, affected
 
 **Snapshot**:
