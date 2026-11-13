@@ -1,3 +1,4 @@
+using FluxorViewer.Protocol;
 using FluxorViewer.Server.Components;
 using FluxorViewer.Server.Ingest;
 using FluxorViewer.Server.Sessions;
@@ -17,7 +18,7 @@ builder.Services.AddSingleton<IngestRejections>();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
 // Real Snapshots easily exceed SignalR's 32 KB default; the Viewer only listens on localhost.
-builder.Services.AddSignalR(o => o.MaximumReceiveMessageSize = IngestRules.MaximumMessageSize);
+builder.Services.AddSignalR(o => o.MaximumReceiveMessageSize = JsonLimits.MaxMessageSize);
 
 // WebAssembly Host apps connect from the browser, so allow any loopback origin.
 builder.Services.AddCors(o => o.AddPolicy(IngestRules.CorsPolicy, p => p

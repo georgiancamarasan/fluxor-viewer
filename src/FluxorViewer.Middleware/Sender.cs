@@ -15,7 +15,7 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
     internal static readonly TimeSpan[] Backoff =
         [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(10)];
 
-    private readonly ViewerJson json = new(context.Options.MaxDepth, context.Logger);
+    private readonly ViewerJson json = new(context.Options, context.Logger);
 
     // Connection attempts since the Viewer last accepted a Snapshot; picks the backoff.
     private int failedAttempts;
@@ -97,7 +97,7 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
         Snapshot snapshot;
         try
         {
-            snapshot = Messages.Snapshot(session, baseCopy, json);
+            snapshot = WireJson.Fit(Messages.Snapshot(session, baseCopy, json), json);
         }
         catch (Exception ex)
         {
@@ -114,9 +114,9 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
 
     private async Task SendBatchAsync(IViewerConnection connection, Batch batch, CancellationToken cancellationToken)
     {
-        var messages = batch.Actions.Select(TryBuild).OfType<ActionRecorded>().ToArray();
-        if (messages.Length > 0)
-            await connection.SendActionsAsync(messages, cancellationToken);
+        var messages = batch.Actions.Select(TryBuild).OfType<ActionRecorded>();
+        foreach (var part in WireJson.Split(messages))
+            await connection.SendActionsAsync(part, cancellationToken);
     }
 
     /// <summary>The message for <paramref name="action"/>, or null (logged at Warning) if it can't be built.</summary>
@@ -124,7 +124,7 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
     {
         try
         {
-            return Messages.ActionRecorded(session, action, json);
+            return WireJson.Fit(Messages.ActionRecorded(session, action, json), json);
         }
         catch (Exception ex)
         {

@@ -27,6 +27,12 @@ public sealed class FluxorViewerOptions
     public int MaxDepth { get; set; } = 64;
 
     /// <summary>
+    /// The largest a Payload or Feature state's JSON may be, in UTF-8 bytes; anything larger is sent as a Serialisation
+    /// error naming its size. Must be from 1 to 32 MB, the largest message the Viewer accepts.
+    /// </summary>
+    public int MaxValueSize { get; set; } = 8 * 1024 * 1024;
+
+    /// <summary>
     /// When false (the default) nothing is registered: no connection is made and nothing is serialised.
     /// Typically set to <c>IsDevelopment()</c>.
     /// </summary>
@@ -70,6 +76,9 @@ public sealed class FluxorViewerOptions
             yield return Problem.OutOfRange(nameof(BufferSize), BufferSize, $"BufferSize must be at least 1, but was {BufferSize}.");
         if (MaxDepth is < 1 or > JsonLimits.MaxDepth)
             yield return Problem.OutOfRange(nameof(MaxDepth), MaxDepth, $"MaxDepth must be between 1 and {JsonLimits.MaxDepth}, but was {MaxDepth}.");
+        if (MaxValueSize is < 1 or > JsonLimits.MaxMessageSize)
+            yield return Problem.OutOfRange(nameof(MaxValueSize), MaxValueSize,
+                $"MaxValueSize must be between 1 and {JsonLimits.MaxMessageSize} bytes (32 MB), but was {MaxValueSize}.");
     }
 
     private static bool IsHttpUrl(string url) =>

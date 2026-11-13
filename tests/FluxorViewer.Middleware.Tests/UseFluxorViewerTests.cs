@@ -153,6 +153,25 @@ public class UseFluxorViewerTests
     public void Max_depth_from_1_to_1024_is_accepted(int maxDepth) =>
         Services(o => o.UseFluxorViewer(v => { v.Enabled = true; v.MaxDepth = maxDepth; }));
 
+    // MW-9: MaxValueSize can't be larger than the Viewer's message limit.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(32 * 1024 * 1024 + 1)]
+    public void Max_value_size_outside_1_byte_to_32_MB_fails_fast(int maxValueSize)
+    {
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            Services(o => o.UseFluxorViewer(v => { v.Enabled = true; v.MaxValueSize = maxValueSize; })));
+
+        Assert.Equal("MaxValueSize", exception.ParamName);
+        Assert.Contains("between 1 and 33554432 bytes (32 MB)", exception.Message);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(32 * 1024 * 1024)]
+    public void Max_value_size_from_1_byte_to_32_MB_is_accepted(int maxValueSize) =>
+        Services(o => o.UseFluxorViewer(v => { v.Enabled = true; v.MaxValueSize = maxValueSize; }));
+
     [Fact]
     public void All_problems_are_reported_together_on_one_line()
     {
