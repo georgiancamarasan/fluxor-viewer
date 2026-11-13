@@ -4,7 +4,7 @@
 
 @if (unreadable is not null)
 {
-    <p class="state-error" data-test="unreadable">Couldn't read this @Subject: @unreadable</p>
+    <p class="state-error" data-test="unreadable">Couldn't read this state: @unreadable</p>
 }
 else
 {
@@ -28,14 +28,12 @@ else
     /// <summary>The JSON to show, left as received.</summary>
     [Parameter, EditorRequired] public string Json { get; set; } = "";
 
-    /// <summary>What the JSON is, for the message when it can't be read: "state" or "Payload".</summary>
-    [Parameter] public string Subject { get; set; } = "state";
-
     private string? parsed;
     private JsonDocument? document;
 
     // Why the JSON couldn't be read (too deep, or malformed by something other than the middleware). Shown instead of
-    // throwing: an exception while rendering would end the developer's circuit.
+    // throwing: an exception while rendering would end the developer's circuit. Only a state gets here: the payload
+    // strip opens a tree only for a Payload that ReceivedJson can read (PayloadLine.CanExpand).
     private string? unreadable;
 
     protected override void OnParametersSet()

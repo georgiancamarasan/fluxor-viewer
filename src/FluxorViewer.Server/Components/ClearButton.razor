@@ -4,7 +4,7 @@
 @if (prompting && Session is { } session)
 {
     @* The text comes first so the confirm button doesn't land where Clear was: a double-click can't confirm. *@
-    <div class="flex items-center gap-2" role="alertdialog" aria-label="Confirm Clear" data-test="clear-prompt" @onkeydown="OnKeyDown">
+    <div class="flex items-center gap-2" role="group" aria-label="Confirm Clear" data-test="clear-prompt" @onkeydown="OnKeyDown">
         <span class="text-sm" data-test="clear-question">@Question(session)</span>
         <button class="control border-red-300 text-red-700 dark:border-red-800 dark:text-red-400" data-test="clear-confirm" @onclick="Confirm">Clear</button>
         @* :focus, not :focus-visible: the prompt opens from a mouse click, after which the browser wouldn't show a focus-visible ring. *@
