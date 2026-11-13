@@ -80,7 +80,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         var snapshot = NewSnapshot(version: new ProtocolVersion(ProtocolVersion.Current.Major + 1, 0));
 
         var first = await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", snapshot, Ct));
-        Assert.Contains($"protocol version {snapshot.ProtocolVersion} is not compatible", first.Message);
+        Assert.Contains("protocol version 2.0 is not compatible", first.Message);
         Assert.True(Rejection.IsRejection(first.Message)); // So the middleware stops rather than retrying.
         Assert.Null(viewer.Registry.Find(snapshot.SessionId));
         Assert.Single(viewer.IngestLogs(LogLevel.Warning), l => l.Message.Contains(snapshot.SessionId.ToString()));

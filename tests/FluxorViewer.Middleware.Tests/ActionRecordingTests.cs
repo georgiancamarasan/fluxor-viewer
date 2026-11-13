@@ -23,11 +23,11 @@ public class ActionRecordingTests
 
         var action = Assert.Single(await Harness.ActionsSent(connection, 1));
         Assert.Equal(snapshot.SessionId, action.SessionId);
-        Assert.Equal(typeof(IncrementAction).FullName, action.ActionType);
+        Assert.Equal("FluxorViewer.Middleware.Tests.IncrementAction", action.ActionType);
         Assert.Equal("{}", action.Payload);
         var counter = Assert.Single(action.ChangedFeatures);
         Assert.Equal("Counter", counter.Name);
-        Assert.Equal(typeof(CounterState).FullName, counter.StateType);
+        Assert.Equal("FluxorViewer.Middleware.Tests.CounterState", counter.StateType);
         Assert.Equal(1, Count(counter));
     }
 
@@ -40,7 +40,7 @@ public class ActionRecordingTests
         harness.Dispatcher.Dispatch(new NothingAction());
 
         var action = Assert.Single(await Harness.ActionsSent(connection, 1));
-        Assert.Equal(typeof(NothingAction).FullName, action.ActionType);
+        Assert.Equal("FluxorViewer.Middleware.Tests.NothingAction", action.ActionType);
         Assert.Empty(action.ChangedFeatures);
     }
 
@@ -67,7 +67,7 @@ public class ActionRecordingTests
         harness.Dispatcher.Dispatch(new GoAction());
 
         var actions = await Harness.ActionsSent(connection, 2);
-        Assert.Equal([typeof(GoAction).FullName, typeof(IncrementAction).FullName], actions.Select(a => a.ActionType));
+        Assert.Equal(["FluxorViewer.Middleware.Tests.GoAction", "FluxorViewer.Middleware.Tests.IncrementAction"], actions.Select(a => a.ActionType));
     }
 
     [Fact]

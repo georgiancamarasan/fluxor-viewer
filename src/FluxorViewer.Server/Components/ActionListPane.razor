@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @implements IAsyncDisposable
 @inject IJSRuntime JS
+@inject TimeProvider Time
 
 <div class="flex items-center gap-3 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
     <input class="control min-w-0 flex-1" type="search" placeholder="filter…" aria-label="Filter by Action type"
@@ -42,7 +43,7 @@ else if (List.VisibleActionCount == 0)
                 @{
                     var selected = row.Entry.Id == List.Selected?.Id;
                     var dimmed = row is ActionRow { Dimmed: true };
-                    var localTime = row.At.ToLocalTime();
+                    var localTime = TimeZoneInfo.ConvertTime(row.At, Time.LocalTimeZone);
                 }
                 <div class="action-row @(selected ? "action-row-selected" : "") @(dimmed ? "opacity-45" : "")"
                      role="option" aria-selected="@(selected ? "true" : "false")" data-dimmed="@(dimmed ? "true" : "false")"

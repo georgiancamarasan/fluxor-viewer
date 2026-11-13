@@ -54,7 +54,7 @@ public class UseFluxorViewerTests
         var options = new FluxorViewerOptions();
 
         Assert.Equal("http://localhost:5299", options.ServerUrl);
-        Assert.Equal(System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name ?? "Unknown", options.AppName);
+        Assert.Equal("FluxorViewer.Middleware.Tests", options.AppName); // the entry assembly: here, the test project
         Assert.Equal(1000, options.BufferSize);
         Assert.Equal(64, options.MaxDepth);
         Assert.False(options.Enabled);

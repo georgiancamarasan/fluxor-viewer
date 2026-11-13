@@ -22,7 +22,7 @@ public class ResyncPageTests : BunitContext
     public ResyncPageTests()
     {
         Services.AddSingleton(registry);
-        Services.AddSingleton(TimeProvider.System);
+        Services.AddSingleton<TimeProvider>(new FixedZoneTime());
         JSInterop.SetupModule("./Components/ActionListPane.razor.js").SetupVoid("scrollToBottom", _ => true);
         diff = JSInterop.SetupModule("./Components/DiffPane.razor.js");
         diff.Setup<bool>("render", _ => true).SetResult(true);
@@ -55,7 +55,7 @@ public class ResyncPageTests : BunitContext
         Assert.Equal(["Increment", "⚠ resync — 12 actions lost", "Increment", "⚠ resync — 1 action lost"], RowTexts(page));
         var resync = page.FindAll("[data-test=resync-row]")[0];
         Assert.Equal("Actions #2–#13 were lost", resync.QuerySelector("[data-test=resync]")!.GetAttribute("title"));
-        Assert.Equal(ReceivedAt.ToLocalTime().ToString("HH:mm:ss.fff"), resync.QuerySelector("[data-test=time]")!.TextContent.Trim());
+        Assert.Equal("12:02:03.045", resync.QuerySelector("[data-test=time]")!.TextContent.Trim());
         Assert.Equal("Action #15 was lost", page.FindAll("[data-test=resync-row]")[1].QuerySelector("[data-test=resync]")!.GetAttribute("title"));
     }
 

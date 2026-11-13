@@ -34,10 +34,10 @@ public class EndToEndTests(Viewer viewer) : IClassFixture<Viewer>
         Assert.Equal(Runtime.Server, session.Runtime);
         var counter = Assert.Single(session.Actions.First().Before.Values);
         Assert.Equal("Counter", counter.Name);
-        Assert.Equal(typeof(CounterState).FullName, counter.StateType);
-        var increments = session.Actions.Where(a => a.ActionType == typeof(IncrementAction).FullName).ToList();
+        Assert.Equal("FluxorViewer.Server.Tests.CounterState", counter.StateType);
+        var increments = session.Actions.Where(a => a.ActionType == "FluxorViewer.Server.Tests.IncrementAction").ToList();
         Assert.Equal([1, 2], increments.Select(a => Count(a.After["Counter"].StateJson)));
-        Assert.Equal(increments[0].Sequence + 1, increments[1].Sequence);
+        Assert.Equal([2L, 3L], increments.Select(a => a.Sequence)); // StoreInitializedAction is 1
 
         await provider.DisposeAsync();
         await Wait.Until(() => viewer.Registry.Find(sessionId)!.ConnectionId is null);

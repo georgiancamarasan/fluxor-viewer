@@ -36,7 +36,7 @@ public class PayloadLineTests
 
         var text = PayloadLine.Of(json).Text;
 
-        Assert.Equal(PayloadLine.MaxLength + 1, text.Length);
+        Assert.Equal(501, text.Length); // 500 characters and the ellipsis
         Assert.StartsWith("""{"s":"xxx""", text);
         Assert.EndsWith("x…", text);
     }

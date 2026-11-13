@@ -22,7 +22,7 @@ public class HomePageTests : BunitContext
     public HomePageTests()
     {
         Services.AddSingleton(registry);
-        Services.AddSingleton(TimeProvider.System);
+        Services.AddSingleton<TimeProvider>(new FixedZoneTime());
         scroll = JSInterop.SetupModule("./Components/ActionListPane.razor.js");
         scroll.SetupVoid("scrollToBottom", _ => true);
         diff = JSInterop.SetupModule("./Components/DiffPane.razor.js");
@@ -264,8 +264,8 @@ public class HomePageTests : BunitContext
         Assert.Equal("LoadedAction<Item>", type.TextContent.Trim());
         Assert.Equal("MyApp.Items.LoadedAction<MyApp.Item>", type.GetAttribute("title"));
         var time = row.QuerySelector("[data-test=time]")!;
-        Assert.Equal(At.ToLocalTime().ToString("HH:mm:ss.fff"), time.TextContent.Trim());
-        Assert.Equal(At.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff zzz"), time.GetAttribute("title"));
+        Assert.Equal("12:02:03.045", time.TextContent.Trim());
+        Assert.Equal("2026-11-12 12:02:03.045 +02:00", time.GetAttribute("title"));
     }
 
     [Fact]
@@ -425,14 +425,19 @@ public class HomePageTests : BunitContext
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
         var page = Render<Home>();
-        var rendersBefore = page.RenderCount;
 
-        for (var sequence = 1; sequence <= 5000; sequence++)
-            Dispatch("c1", Id("aaaa"), sequence, "App.Increment", "Counter");
+        DispatchIncrements(Id("aaaa"), 5000);
 
         page.WaitForAssertion(() => Assert.Equal("CounterState · after #5000 Increment", Header(page)));
         // ~10 renders a second: far fewer than one per Action however long the burst took to send.
-        Assert.InRange(page.RenderCount - rendersBefore, 1, 100);
+        Assert.InRange(page.RenderCount, 1, 100);
+    }
+
+    /// <summary>Dispatches <paramref name="count"/> increments, one batch each, from Sequence 1.</summary>
+    private void DispatchIncrements(Guid sessionId, int count)
+    {
+        for (var sequence = 1; sequence <= count; sequence++)
+            Dispatch("c1", sessionId, sequence, "App.Increment", "Counter");
     }
 
     private static string? SelectedRow(IRenderedComponent<Home> page) =>
@@ -795,12 +800,11 @@ public class HomePageTests : BunitContext
         var page = Render<Home>();
         ShowTab(page, "Diff");
         page.FindAll("[data-test=action-row]")[0].Click();
-        var renders = DiffRenders.Count;
 
         Dispatch("c1", Id("aaaa"), 3, "App.Increment", "Counter");
 
         page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("[data-test=new-actions]")));
-        Assert.Equal(renders, DiffRenders.Count);
+        Assert.Equal(2, DiffRenders.Count); // #2 when the tab opened, then #1 when clicked: none for #3
     }
 
     private void DispatchPayload(Guid sessionId, long sequence, string type, string payload) =>

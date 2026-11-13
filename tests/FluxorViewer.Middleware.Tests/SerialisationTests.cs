@@ -30,7 +30,7 @@ public class SerialisationTests
 
         var actions = await Harness.ActionsSent(connection, 2);
         Assert.Equal([2L, 3L], actions.Select(a => a.Sequence));
-        Assert.Equal(typeof(ExplodingAction).FullName, actions[0].ActionType);
+        Assert.Equal("FluxorViewer.Middleware.Tests.ExplodingAction", actions[0].ActionType);
         Assert.Equal("Boom", Error(actions[0].Payload));
     }
 
@@ -45,7 +45,7 @@ public class SerialisationTests
         var action = Assert.Single(await Harness.ActionsSent(connection, 1));
         Assert.Equal("{}", action.Payload);
         var broken = Assert.Single(action.ChangedFeatures, f => f.Name == "Broken");
-        Assert.Equal(typeof(BrokenState).FullName, broken.StateType);
+        Assert.Equal("FluxorViewer.Middleware.Tests.BrokenState", broken.StateType);
         Assert.Equal("Converter says no", Error(broken.StateJson));
         var counter = Assert.Single(action.ChangedFeatures, f => f.Name == "Counter");
         Assert.Equal("""{"Count":1}""", counter.StateJson);
@@ -146,7 +146,7 @@ public class SerialisationTests
 
         var entries = harness.Logs.Entries.Where(e => e.Exception is GrumpyException).ToList();
         Assert.Equal([LogLevel.Warning, LogLevel.Debug], entries.Select(e => e.Level));
-        Assert.Contains(typeof(GrumpyAction).FullName!, entries[0].Message);
+        Assert.Contains("FluxorViewer.Middleware.Tests.GrumpyAction", entries[0].Message);
     }
 
     [Fact]

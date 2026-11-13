@@ -60,17 +60,17 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
     }
 
     [Theory]
-    [InlineData("0")]
-    [InlineData("-5")]
-    [InlineData("abc")]
-    [InlineData("1.5")]
-    [InlineData("")]
-    public async Task A_history_that_is_not_a_whole_number_of_at_least_1_stops_the_Viewer_with_one_line(string value)
+    [InlineData("0", "--history must be a whole number of at least 1, not \"0\".")]
+    [InlineData("-5", "--history must be a whole number of at least 1, not \"-5\".")]
+    [InlineData("abc", "--history must be a whole number of at least 1, not \"abc\".")]
+    [InlineData("1.5", "--history must be a whole number of at least 1, not \"1.5\".")]
+    [InlineData("", "--history must be a whole number of at least 1, not \"\".")]
+    public async Task A_history_that_is_not_a_whole_number_of_at_least_1_stops_the_Viewer_with_one_line(string value, string message)
     {
         var (exitCode, error) = await StartViewerProcessAsync("--history", value);
 
         Assert.Equal(1, exitCode);
-        Assert.Equal($"--history must be a whole number of at least 1, not \"{value}\".", error.Trim());
+        Assert.Equal(message, error.Trim());
     }
 
     [Fact]

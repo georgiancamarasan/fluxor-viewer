@@ -55,13 +55,13 @@ public class SessionStartTests
             counter =>
             {
                 Assert.Equal("Counter", counter.Name);
-                Assert.Equal(typeof(CounterState).FullName, counter.StateType);
+                Assert.Equal("FluxorViewer.Middleware.Tests.CounterState", counter.StateType);
                 Assert.Equal(0, CounterJson.Count(counter));
             },
             profile =>
             {
                 Assert.Equal("Profile", profile.Name);
-                Assert.Equal(typeof(ProfileState).FullName, profile.StateType);
+                Assert.Equal("FluxorViewer.Middleware.Tests.ProfileState", profile.StateType);
                 Assert.Equal("Ada", JsonDocument.Parse(profile.StateJson).RootElement.GetProperty("Name").GetString());
             });
     }

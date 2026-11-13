@@ -146,13 +146,16 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
     }
 
     [Fact]
-    public void Clearing_an_unknown_Session_does_nothing()
+    public async Task Clearing_an_unknown_Session_leaves_the_others_alone()
     {
-        var before = viewer.Registry.GetSessions().Count;
+        var sessionId = Guid.NewGuid();
+        await using var connection = await viewer.ConnectAsync();
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+        await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1) }, Ct);
 
         viewer.Registry.Clear(Guid.NewGuid());
 
-        Assert.Equal(before, viewer.Registry.GetSessions().Count);
+        Assert.Single(Session(sessionId).Actions);
     }
 
     [Fact]
@@ -179,49 +182,59 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
     [Fact]
     public async Task Many_Sessions_reporting_reconnecting_and_clearing_at_once_stay_consistent()
     {
-        const int sessionCount = 20;
-        const int batches = 10;
-        var ids = Enumerable.Range(0, sessionCount).Select(_ => Guid.NewGuid()).ToArray();
+        Guid[] reconnecting = [.. Enumerable.Range(0, 10).Select(_ => Guid.NewGuid())];
+        Guid[] clearing = [.. Enumerable.Range(0, 10).Select(_ => Guid.NewGuid())];
 
-        await Task.WhenAll(ids.Select(async (id, i) =>
+        await Task.WhenAll([.. reconnecting.Select(ReportThenReconnect), .. clearing.Select(ReportClearingAfterEachBatchThenClose)]);
+
+        await Wait.Until(() => clearing.All(id => Session(id).Status == SessionStatus.Disconnected));
+        Assert.All(reconnecting.Select(Session), session =>
         {
-            var connection = await viewer.ConnectAsync();
-            await connection.InvokeAsync("Snapshot", NewSnapshot(id), Ct);
-            for (var b = 0; b < batches; b++)
-            {
-                await connection.InvokeAsync("Actions", new[] { Increment(id, 2 * b + 1), Increment(id, 2 * b + 2) }, Ct);
-                if (i % 2 == 0)
-                    viewer.Registry.Clear(id);
-                _ = viewer.Registry.GetSessions();
-            }
-
-            await connection.DisposeAsync();
-
-            // Odd Sessions reconnect after closing; even ones stay disconnected.
-            if (i % 2 == 1)
-            {
-                var again = await viewer.ConnectAsync();
-                await again.InvokeAsync("Snapshot", NewSnapshot(id, lastSequence: 2 * batches), Ct);
-            }
-        }));
-
-        await Wait.Until(() => ids.Where((_, i) => i % 2 == 0).All(id => Session(id).Status == SessionStatus.Disconnected));
-        for (var i = 0; i < sessionCount; i++)
+            Assert.Equal(SessionStatus.Connected, session.Status);
+            Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], session.Actions.Select(a => a.Sequence));
+            Assert.Equal(20, session.LastSequence);
+        });
+        Assert.All(clearing.Select(Session), session =>
         {
-            var session = Session(ids[i]);
-            if (i % 2 == 1)
-            {
-                Assert.Equal(SessionStatus.Connected, session.Status);
-                Assert.Equal(Enumerable.Range(1, 2 * batches).Select(n => (long)n), session.Actions.Select(a => a.Sequence));
-                Assert.Equal(2 * batches, session.LastSequence);
-            }
-            else
-            {
-                // Cleared after its last batch, while still connected.
-                Assert.Empty(session.History);
-                Assert.Equal(2 * batches, session.LastSequence);
-                Assert.Equal($$"""{"Count":{{2 * batches}}}""", session.Current["Counter"].StateJson);
-            }
+            // Cleared after its last batch, while still connected.
+            Assert.Empty(session.History);
+            Assert.Equal(20, session.LastSequence);
+            Assert.Equal("""{"Count":20}""", session.Current["Counter"].StateJson);
+        });
+    }
+
+    /// <summary>Reports Actions 1–20, closes, and reconnects from where it was.</summary>
+    private async Task ReportThenReconnect(Guid sessionId)
+    {
+        await using (var connection = await viewer.ConnectAsync())
+        {
+            await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+            await SendTenBatches(connection, sessionId, afterEach: () => { });
+        }
+
+        var again = await viewer.ConnectAsync(); // left open: the Session stays connected for the assertions
+        await again.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 20), Ct);
+    }
+
+    /// <summary>Reports Actions 1–20, Clearing the Session after each batch, then closes.</summary>
+    private async Task ReportClearingAfterEachBatchThenClose(Guid sessionId)
+    {
+        await using var connection = await viewer.ConnectAsync();
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+        await SendTenBatches(connection, sessionId, afterEach: () => viewer.Registry.Clear(sessionId));
+    }
+
+    /// <summary>
+    /// Sends Actions 1–20 in batches of two, running <paramref name="afterEach"/> and reading the Session list between
+    /// batches, so registry reads and Clears race the other Sessions' writes.
+    /// </summary>
+    private async Task SendTenBatches(HubConnection connection, Guid sessionId, Action afterEach)
+    {
+        for (var sequence = 1; sequence <= 20; sequence += 2)
+        {
+            await connection.InvokeAsync("Actions", new[] { Increment(sessionId, sequence), Increment(sessionId, sequence + 1) }, Ct);
+            afterEach();
+            _ = viewer.Registry.GetSessions();
         }
     }
 }
