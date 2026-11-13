@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Fluxor;
 using FluxorViewer.Protocol;
 using Microsoft.Extensions.Logging;
@@ -30,7 +31,7 @@ internal sealed class SessionReporter(ReporterContext context) : IAsyncDisposabl
     /// </summary>
     public void Record(object action)
     {
-        if (tracker is null || buffer is null)
+        if (tracker is null || buffer is null || IsIgnored(action))
             return;
         try
         {
@@ -40,6 +41,34 @@ internal sealed class SessionReporter(ReporterContext context) : IAsyncDisposabl
         {
             context.Logger.LogDebug(ex, "FluxorViewer: could not record {ActionType}.", action.GetType());
         }
+    }
+
+    // Shared by every Session: a Blazor Server app has many, all with the same predicates.
+    private static readonly ConditionalWeakTable<Func<object, bool>, object> WarnedPredicates = new();
+
+    /// <summary>
+    /// Whether any IgnoreAction predicate matches <paramref name="action"/>. A predicate that throws counts as false,
+    /// logged at Warning the first time it throws in the process and at Debug after that.
+    /// </summary>
+    private bool IsIgnored(object action)
+    {
+        foreach (var ignore in context.Options.IgnoredActionPredicates)
+        {
+            try
+            {
+                if (ignore(action))
+                    return true;
+            }
+            catch (Exception ex)
+            {
+                var level = WarnedPredicates.TryAdd(ignore, new object()) ? LogLevel.Warning : LogLevel.Debug;
+                context.Logger.Log(level, ex,
+                    "FluxorViewer: an IgnoreAction predicate threw for {ActionType}; the Action is reported unless another predicate ignores it.",
+                    TypeNames.Readable(action.GetType()));
+            }
+        }
+
+        return false;
     }
 
     public async ValueTask DisposeAsync()

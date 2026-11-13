@@ -34,7 +34,10 @@ public sealed class FluxorViewerOptions
 
     internal IReadOnlyList<Func<object, bool>> IgnoredActionPredicates => ignoredActionPredicates;
 
-    /// <summary>Don't report Actions for which <paramref name="predicate"/> returns true.</summary>
+    /// <summary>
+    /// Don't report Actions for which <paramref name="predicate"/> returns true. They take no Sequence, and the state they
+    /// change is reported with the next reported Action. A predicate that throws counts as false and is logged.
+    /// </summary>
     public FluxorViewerOptions IgnoreAction(Func<object, bool> predicate)
     {
         ArgumentNullException.ThrowIfNull(predicate);
