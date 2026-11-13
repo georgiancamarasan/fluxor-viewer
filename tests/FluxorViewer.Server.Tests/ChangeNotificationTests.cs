@@ -4,6 +4,8 @@ using FluxorViewer.Server.Sessions;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
 
+using static FluxorViewer.Server.Tests.Messages;
+
 namespace FluxorViewer.Server.Tests;
 
 // IN-7: the registry tells the UI what changed, once per call, after the change is made.
@@ -18,23 +20,6 @@ public class ChangeNotificationTests
         registry = new SessionRegistry(logger, TimeProvider.System, HistoryLimit.Default);
         registry.Changed += changes.Add;
     }
-
-    private static Snapshot NewSnapshot(Guid sessionId, long lastSequence = 0) => new(
-        ProtocolVersion.Current,
-        sessionId,
-        "TestApp",
-        Runtime.Server,
-        DateTimeOffset.UtcNow,
-        lastSequence,
-        DroppedCount: 0,
-        [new FeatureState("Counter", "App.CounterState", """{"Count":0}""")]);
-
-    private static ActionRecorded[] Increments(Guid sessionId, long from, int count) =>
-    [
-        .. Enumerable.Range(0, count).Select(i => new ActionRecorded(
-            sessionId, from + i, DateTimeOffset.UtcNow, "App.IncrementAction", "{}",
-            [new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{from + i}}}""")]))
-    ];
 
     private Guid Start(string connectionId = "c1")
     {
@@ -159,8 +144,7 @@ public class ChangeNotificationTests
         {
             // If the lock were still held, a reader on another thread would block until the timeout.
             var read = Task.Run(() => registry.Find(sessionId));
-            if (read.Wait(TimeSpan.FromSeconds(2)))
-                seenOnAnotherThread = read.Result!.Actions.Count();
+            seenOnAnotherThread = read.Wait(TimeSpan.FromSeconds(2)) ? read.Result!.Actions.Count() : null;
         };
 
         registry.ActionsReceived("c1", Increments(sessionId, 1, 1));

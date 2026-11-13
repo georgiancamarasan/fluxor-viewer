@@ -6,6 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
+using static FluxorViewer.Server.Tests.Messages;
+
 namespace FluxorViewer.Server.Tests;
 
 // IN-5: Resyncs in the Action list and the right pane, against a real registry.
@@ -16,24 +18,20 @@ public class ResyncPageTests : BunitContext
 
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, new FakeTimeProvider(ReceivedAt), HistoryLimit.Default);
 
-    // The Diff tab's rendering, recorded rather than run: jsondiffpatch runs in the browser.
     private readonly BunitJSModuleInterop diff;
 
     public ResyncPageTests()
     {
         Services.AddSingleton(registry);
         Services.AddSingleton<TimeProvider>(new FixedZoneTime());
-        JSInterop.SetupModule("./Components/ActionListPane.razor.js").SetupVoid("scrollToBottom", _ => true);
-        diff = JSInterop.SetupModule("./Components/DiffPane.razor.js");
-        diff.Setup<bool>("render", _ => true).SetResult(true);
+        (_, diff) = JSInterop.SetupPaneModules();
     }
 
-    private void Snapshot(long lastSequence, long droppedCount = 0, int count = 0) => registry.SnapshotReceived("c1", new Snapshot(
-        ProtocolVersion.Current, SessionId, "MyApp", Runtime.Server, ReceivedAt, lastSequence, droppedCount,
-        [new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{count}}}""")]));
+    private void Snapshot(long lastSequence, long droppedCount = 0, int count = 0) => registry.SnapshotReceived("c1",
+        NewSnapshot(SessionId) with { AppName = "MyApp", LastSequence = lastSequence, DroppedCount = droppedCount, Features = [Counter(count)] });
 
-    private void Dispatch(long sequence, string type = "App.Increment") => registry.ActionsReceived("c1", [new ActionRecorded(
-        SessionId, sequence, ReceivedAt, type, "{}", [new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{sequence}}}""")])]);
+    private void Dispatch(long sequence, string type = "App.Increment") =>
+        registry.ActionsReceived("c1", [Increment(SessionId, sequence) with { Timestamp = ReceivedAt, ActionType = type }]);
 
     private static string[] RowTexts(IRenderedComponent<Home> page) =>
         [.. page.FindAll("[data-test=action-list] [role=option]").Select(r => r.QuerySelector("[data-test=type],[data-test=resync]")!.TextContent.Trim())];

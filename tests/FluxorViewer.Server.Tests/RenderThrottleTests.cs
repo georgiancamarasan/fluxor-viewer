@@ -54,13 +54,18 @@ public class RenderThrottleTests
     [Fact]
     public void A_steady_stream_renders_once_per_interval()
     {
-        for (var ms = 0; ms < 1000; ms++)
+        RequestEveryMillisecond(TimeSpan.FromSeconds(1));
+
+        Assert.InRange(renders, 10, 11);
+    }
+
+    private void RequestEveryMillisecond(TimeSpan duration)
+    {
+        for (var elapsed = TimeSpan.Zero; elapsed < duration; elapsed += TimeSpan.FromMilliseconds(1))
         {
             throttle.Request();
             time.Advance(TimeSpan.FromMilliseconds(1));
         }
-
-        Assert.InRange(renders, 10, 11);
     }
 
     [Fact]

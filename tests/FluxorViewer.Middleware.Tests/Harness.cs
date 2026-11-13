@@ -56,6 +56,22 @@ internal sealed class Harness : IAsyncDisposable
 
     public IDispatcher Dispatcher => provider.GetRequiredService<IDispatcher>();
 
+    /// <summary>Dispatches <paramref name="count"/> increments, one after another.</summary>
+    public void DispatchIncrements(int count)
+    {
+        for (var i = 0; i < count; i++)
+            Dispatcher.Dispatch(new IncrementAction());
+    }
+
+    /// <summary>Advances time to the next connection attempt and says how many whole seconds that took.</summary>
+    public async Task<double> SecondsToNextAttempt()
+    {
+        var from = Time.GetUtcNow();
+        var attempts = Viewer.Connections.Count;
+        await AdvanceUntil(() => Viewer.Connections.Count > attempts);
+        return Math.Round((Time.GetUtcNow() - from).TotalSeconds);
+    }
+
     public T Get<T>() where T : notnull => provider.GetRequiredService<T>();
 
     public Task InitializeAsync() => provider.GetRequiredService<IStore>().InitializeAsync();

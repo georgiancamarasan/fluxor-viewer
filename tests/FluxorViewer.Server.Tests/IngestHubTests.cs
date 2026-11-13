@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
 
+using static FluxorViewer.Server.Tests.Messages;
+
 namespace FluxorViewer.Server.Tests;
 
 // IN-2: the hub accepts Snapshots and Actions from middleware and enforces the protocol.
@@ -12,39 +14,25 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
 {
     private static CancellationToken Ct => Wait.Ct;
 
-    private static Snapshot NewSnapshot(Guid? sessionId = null, ProtocolVersion? version = null, IReadOnlyList<FeatureState>? features = null) => new(
-        version ?? ProtocolVersion.Current,
-        sessionId ?? Guid.NewGuid(),
-        "TestApp",
-        Runtime.WebAssembly,
-        DateTimeOffset.UtcNow,
-        LastSequence: 0,
-        DroppedCount: 0,
-        features ?? [new FeatureState("Counter", "App.CounterState", """{"Count":0}""")]);
-
-    private static ActionRecorded NewAction(Guid sessionId, long sequence) => new(
-        sessionId, sequence, DateTimeOffset.UtcNow, "App.IncrementAction", "{}",
-        [new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{sequence}}}""")]);
-
     [Fact]
     public async Task A_Snapshot_and_then_batches_of_Actions_reach_the_registry()
     {
         await using var connection = await viewer.ConnectAsync();
-        var snapshot = NewSnapshot();
+        var snapshot = NewSnapshot(Guid.NewGuid());
 
         await connection.InvokeAsync("Snapshot", snapshot, Ct);
         var session = viewer.Registry.Find(snapshot.SessionId);
         Assert.NotNull(session);
         Assert.Equal("TestApp", session.AppName);
-        Assert.Equal(Runtime.WebAssembly, session.Runtime);
+        Assert.Equal(Runtime.Server, session.Runtime);
         Assert.Equal(connection.ConnectionId, session.ConnectionId);
 
-        await connection.InvokeAsync("Actions", new[] { NewAction(snapshot.SessionId, 1), NewAction(snapshot.SessionId, 2) }, Ct);
+        await connection.InvokeAsync("Actions", new[] { Increment(snapshot.SessionId, 1), Increment(snapshot.SessionId, 2) }, Ct);
         session = viewer.Registry.Find(snapshot.SessionId)!;
         Assert.Equal([1L, 2L], session.Actions.Select(a => a.Sequence));
         Assert.Equal("""{"Count":0}""", session.Actions.First().Before["Counter"].StateJson);
 
-        await connection.InvokeAsync("Actions", new[] { NewAction(snapshot.SessionId, 3) }, Ct);
+        await connection.InvokeAsync("Actions", new[] { Increment(snapshot.SessionId, 3) }, Ct);
         session = viewer.Registry.Find(snapshot.SessionId)!;
         Assert.Equal([1L, 2L, 3L], session.Actions.Select(a => a.Sequence));
         Assert.Equal("""{"Count":3}""", session.Current["Counter"].StateJson);
@@ -66,7 +54,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     public async Task A_different_minor_version_is_accepted()
     {
         await using var connection = await viewer.ConnectAsync();
-        var snapshot = NewSnapshot(version: ProtocolVersion.Current with { Minor = ProtocolVersion.Current.Minor + 7 });
+        var snapshot = NewSnapshot(Guid.NewGuid()) with { ProtocolVersion = ProtocolVersion.Current with { Minor = ProtocolVersion.Current.Minor + 7 } };
 
         await connection.InvokeAsync("Snapshot", snapshot, Ct);
 
@@ -77,7 +65,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     public async Task An_incompatible_major_version_is_rejected_and_logged_once_per_Session()
     {
         await using var connection = await viewer.ConnectAsync();
-        var snapshot = NewSnapshot(version: new ProtocolVersion(ProtocolVersion.Current.Major + 1, 0));
+        var snapshot = NewSnapshot(Guid.NewGuid()) with { ProtocolVersion = new ProtocolVersion(ProtocolVersion.Current.Major + 1, 0) };
 
         var first = await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", snapshot, Ct));
         Assert.Contains("protocol version 2.0 is not compatible", first.Message);
@@ -100,7 +88,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         var sessionId = Guid.NewGuid();
 
         var ex = await Assert.ThrowsAsync<HubException>(() =>
-            connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 1) }, Ct));
+            connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1) }, Ct));
 
         Assert.Contains("before a Snapshot", ex.Message);
         Assert.True(Rejection.IsRejection(ex.Message)); // So the middleware stops rather than retrying.
@@ -111,11 +99,11 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     public async Task Actions_for_another_Session_are_rejected()
     {
         await using var connection = await viewer.ConnectAsync();
-        var snapshot = NewSnapshot();
+        var snapshot = NewSnapshot(Guid.NewGuid());
         await connection.InvokeAsync("Snapshot", snapshot, Ct);
 
         var ex = await Assert.ThrowsAsync<HubException>(() =>
-            connection.InvokeAsync("Actions", new[] { NewAction(snapshot.SessionId, 1), NewAction(Guid.NewGuid(), 2) }, Ct));
+            connection.InvokeAsync("Actions", new[] { Increment(snapshot.SessionId, 1), Increment(Guid.NewGuid(), 2) }, Ct));
 
         Assert.Contains("reports Session", ex.Message);
         Assert.Empty(viewer.Registry.Find(snapshot.SessionId)!.Actions); // The whole batch is refused.
@@ -125,8 +113,8 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     public async Task A_second_Session_on_one_connection_is_rejected()
     {
         await using var connection = await viewer.ConnectAsync();
-        var first = NewSnapshot();
-        var second = NewSnapshot();
+        var first = NewSnapshot(Guid.NewGuid());
+        var second = NewSnapshot(Guid.NewGuid());
         await connection.InvokeAsync("Snapshot", first, Ct);
 
         var ex = await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", second, Ct));
@@ -138,13 +126,13 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     public static TheoryData<string, Snapshot> InvalidSnapshots => new()
     {
         { "empty SessionId", NewSnapshot(Guid.Empty) },
-        { "no Features list", NewSnapshot() with { Features = null! } },
-        { "Feature 'Counter' more than once", NewSnapshot(features: [new("Counter", "A", "{}"), new("Counter", "A", "{}")]) },
-        { "no AppName", NewSnapshot() with { AppName = null! } },
-        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(features: [null!]) },
-        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(features: [new(null!, "A", "{}")]) },
-        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(features: [new("Counter", null!, "{}")]) },
-        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(features: [new("Counter", "A", null!)]) },
+        { "no Features list", NewSnapshot(Guid.NewGuid()) with { Features = null! } },
+        { "Feature 'Counter' more than once", NewSnapshot(Guid.NewGuid()) with { Features = [new("Counter", "A", "{}"), new("Counter", "A", "{}")] } },
+        { "no AppName", NewSnapshot(Guid.NewGuid()) with { AppName = null! } },
+        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(Guid.NewGuid()) with { Features = [null!] } },
+        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(Guid.NewGuid()) with { Features = [new(null!, "A", "{}")] } },
+        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(Guid.NewGuid()) with { Features = [new("Counter", null!, "{}")] } },
+        { "a Feature that is null or missing its Name, StateType or StateJson", NewSnapshot(Guid.NewGuid()) with { Features = [new("Counter", "A", null!)] } },
     };
 
     [Theory]
@@ -162,11 +150,11 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
 
     public static TheoryData<string, ActionRecorded> InvalidActions => new()
     {
-        { "missing its ActionType, Payload or ChangedFeatures", NewAction(Guid.Empty, 2) with { ActionType = null! } },
-        { "missing its ActionType, Payload or ChangedFeatures", NewAction(Guid.Empty, 2) with { Payload = null! } },
-        { "missing its ActionType, Payload or ChangedFeatures", NewAction(Guid.Empty, 2) with { ChangedFeatures = null! } },
-        { "a Changed Feature that is null or missing its Name, StateType or StateJson", NewAction(Guid.Empty, 2) with { ChangedFeatures = [null!] } },
-        { "a Changed Feature that is null or missing its Name, StateType or StateJson", NewAction(Guid.Empty, 2) with { ChangedFeatures = [new(null!, "A", "{}")] } },
+        { "missing its ActionType, Payload or ChangedFeatures", Increment(Guid.Empty, 2) with { ActionType = null! } },
+        { "missing its ActionType, Payload or ChangedFeatures", Increment(Guid.Empty, 2) with { Payload = null! } },
+        { "missing its ActionType, Payload or ChangedFeatures", Increment(Guid.Empty, 2) with { ChangedFeatures = null! } },
+        { "a Changed Feature that is null or missing its Name, StateType or StateJson", Increment(Guid.Empty, 2) with { ChangedFeatures = [null!] } },
+        { "a Changed Feature that is null or missing its Name, StateType or StateJson", Increment(Guid.Empty, 2) with { ChangedFeatures = [new(null!, "A", "{}")] } },
     };
 
     [Theory]
@@ -178,7 +166,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
 
         var ex = await Assert.ThrowsAsync<HubException>(() =>
-            connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 1), invalid with { SessionId = sessionId } }, Ct));
+            connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1), invalid with { SessionId = sessionId } }, Ct));
 
         Assert.Contains(problem, ex.Message);
         Assert.Empty(viewer.Registry.Find(sessionId)!.Actions);
@@ -190,8 +178,9 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         await using var connection = await viewer.ConnectAsync();
         var marker = Guid.NewGuid();
 
-        for (var i = 0; i < 3; i++)
-            await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Actions", new[] { NewAction(marker, 1) }, Ct));
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Actions", new[] { Increment(marker, 1) }, Ct));
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Actions", new[] { Increment(marker, 1) }, Ct));
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Actions", new[] { Increment(marker, 1) }, Ct));
 
         bool OnThisConnection((LogLevel Level, string Message) l) => l.Message.Contains(connection.ConnectionId!);
         Assert.Single(viewer.IngestLogs(LogLevel.Warning), OnThisConnection);
@@ -202,7 +191,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     public async Task Closing_the_connection_reaches_the_registry()
     {
         var connection = await viewer.ConnectAsync();
-        var snapshot = NewSnapshot();
+        var snapshot = NewSnapshot(Guid.NewGuid());
         await connection.InvokeAsync("Snapshot", snapshot, Ct);
 
         await connection.DisposeAsync();
@@ -215,35 +204,46 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     {
         await using var connection = await viewer.ConnectAsync();
         var bigState = $$"""{"Text":"{{new string('x', 1024 * 1024)}}"}""";
-        var snapshot = NewSnapshot(features: [new FeatureState("Big", "App.BigState", bigState)]);
+        var snapshot = NewSnapshot(Guid.NewGuid()) with { Features = [new FeatureState("Big", "App.BigState", bigState)] };
 
         await connection.InvokeAsync("Snapshot", snapshot, Ct);
 
         Assert.Equal(bigState, viewer.Registry.Find(snapshot.SessionId)!.Current["Big"].StateJson);
     }
 
-    [Theory]
-    [InlineData("http://localhost:5001", true)]
-    [InlineData("https://localhost", true)]
-    [InlineData("http://127.0.0.1:8080", true)]
-    [InlineData("http://[::1]:5173", true)]
-    [InlineData("https://example.com", false)]
-    [InlineData("http://192.168.1.20:5000", false)]
-    [InlineData("ftp://localhost", false)]
-    public async Task CORS_allows_loopback_origins_only(string origin, bool allowed)
+    /// <summary>The browser's CORS preflight for a Host app at <paramref name="origin"/> negotiating with the ingest hub.</summary>
+    private async Task<HttpResponseMessage> PreflightAsync(string origin)
     {
         using var client = new HttpClient { BaseAddress = viewer.BaseAddress };
         using var request = new HttpRequestMessage(HttpMethod.Options, $"{IngestHub.Path}/negotiate?negotiateVersion=1");
         request.Headers.Add("Origin", origin);
         request.Headers.Add("Access-Control-Request-Method", "POST");
+        return await client.SendAsync(request, Ct);
+    }
 
-        using var response = await client.SendAsync(request, Ct);
+    [Theory]
+    [InlineData("http://localhost:5001")]
+    [InlineData("https://localhost")]
+    [InlineData("http://127.0.0.1:8080")]
+    [InlineData("http://[::1]:5173")]
+    public async Task CORS_allows_loopback_origins(string origin)
+    {
+        using var response = await PreflightAsync(origin);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        if (allowed)
-            Assert.Equal(origin, Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
-        else
-            Assert.False(response.Headers.Contains("Access-Control-Allow-Origin"));
+        Assert.Equal(origin, Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
+    }
+
+    [Theory]
+    [InlineData("https://example.com")]
+    [InlineData("http://192.168.1.20:5000")]
+    [InlineData("ftp://localhost")]
+    public async Task CORS_refuses_other_origins(string origin)
+    {
+        using var response = await PreflightAsync(origin);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.False(response.Headers.Contains("Access-Control-Allow-Origin"));
     }
 
     [Fact]

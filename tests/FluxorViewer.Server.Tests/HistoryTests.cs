@@ -2,6 +2,8 @@ using FluxorViewer.Protocol;
 using FluxorViewer.Server.Sessions;
 using Microsoft.AspNetCore.SignalR.Client;
 
+using static FluxorViewer.Server.Tests.Messages;
+
 namespace FluxorViewer.Server.Tests;
 
 // IN-4: each Action in the History holds the Feature states before and after it.
@@ -9,30 +11,18 @@ public class HistoryTests(Viewer viewer) : IClassFixture<Viewer>
 {
     private static CancellationToken Ct => Wait.Ct;
 
-    private static Snapshot NewSnapshot(Guid sessionId, long lastSequence = 0, string count = "0") => new(
-        ProtocolVersion.Current,
-        sessionId,
-        "TestApp",
-        Runtime.Server,
-        DateTimeOffset.UtcNow,
-        lastSequence,
-        DroppedCount: 0,
-        [
-            new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{count}}}"""),
-            new FeatureState("Weather", "App.WeatherState", """{"Loading":false}"""),
-        ]);
+    /// <summary>A first Snapshot with a Weather Feature beside the Counter.</summary>
+    private static Snapshot WithWeather(Guid sessionId) => NewSnapshot(sessionId) with { Features = [Counter(0), Weather(false)] };
 
     private static ActionRecorded NewAction(Guid sessionId, long sequence, params FeatureState[] changed) => new(
         sessionId, sequence, DateTimeOffset.UtcNow, "App.SomeAction", "{}", changed);
-
-    private static FeatureState Counter(int count) => new("Counter", "App.CounterState", $$"""{"Count":{{count}}}""");
 
     private static FeatureState Weather(bool loading) => new("Weather", "App.WeatherState", $$"""{"Loading":{{(loading ? "true" : "false")}}}""");
 
     private async Task<(HubConnection Connection, Guid SessionId)> StartAsync(Snapshot? snapshot = null)
     {
         var connection = await viewer.ConnectAsync();
-        snapshot ??= NewSnapshot(Guid.NewGuid());
+        snapshot ??= WithWeather(Guid.NewGuid());
         await connection.InvokeAsync("Snapshot", snapshot, Ct);
         return (connection, snapshot.SessionId);
     }
@@ -121,7 +111,7 @@ public class HistoryTests(Viewer viewer) : IClassFixture<Viewer>
         await using var _ = connection;
         await connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 1, Counter(1)) }, Ct);
 
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 9, count: "9") with { DroppedCount = 8 }, Ct);
+        await connection.InvokeAsync("Snapshot", SnapshotAfter(sessionId, 9) with { DroppedCount = 8, Features = [Counter(9), Weather(false)] }, Ct);
         await connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 10, Counter(10)) }, Ct);
 
         var session = viewer.Registry.Find(sessionId)!;

@@ -13,20 +13,14 @@ public class HomePageTests : BunitContext
 {
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, HistoryLimit.Default);
 
-    // The Action list's scrolling, recorded rather than run.
     private readonly BunitJSModuleInterop scroll;
-
-    // The Diff tab's rendering, recorded rather than run: jsondiffpatch runs in the browser.
     private readonly BunitJSModuleInterop diff;
 
     public HomePageTests()
     {
         Services.AddSingleton(registry);
         Services.AddSingleton<TimeProvider>(new FixedZoneTime());
-        scroll = JSInterop.SetupModule("./Components/ActionListPane.razor.js");
-        scroll.SetupVoid("scrollToBottom", _ => true);
-        diff = JSInterop.SetupModule("./Components/DiffPane.razor.js");
-        diff.Setup<bool>("render", _ => true).SetResult(true);
+        (scroll, diff) = JSInterop.SetupPaneModules();
     }
 
     private static Snapshot NewSnapshot(Guid sessionId, string appName = "MyApp", Runtime runtime = Runtime.WebAssembly, params string[] features) => new(

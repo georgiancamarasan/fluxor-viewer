@@ -3,29 +3,14 @@ using FluxorViewer.Server.Sessions;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
 
+using static FluxorViewer.Server.Tests.Messages;
+
 namespace FluxorViewer.Server.Tests;
 
 // IN-5: a Snapshot that doesn't follow on from what the Viewer already had marks a Resync in the History.
 public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
 {
     private static CancellationToken Ct => Wait.Ct;
-
-    private static Snapshot NewSnapshot(Guid sessionId, long lastSequence = 0, long droppedCount = 0, int count = 0) => new(
-        ProtocolVersion.Current,
-        sessionId,
-        "TestApp",
-        Runtime.Server,
-        DateTimeOffset.UtcNow,
-        lastSequence,
-        droppedCount,
-        [new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{count}}}""")]);
-
-    private static ActionRecorded[] Increments(Guid sessionId, long from, long to) =>
-    [
-        .. Enumerable.Range((int)from, (int)(to - from + 1)).Select(i => new ActionRecorded(
-            sessionId, i, DateTimeOffset.UtcNow, "App.IncrementAction", "{}",
-            [new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{i}}}""")]))
-    ];
 
     private async Task<HubConnection> SnapshotAsync(Snapshot snapshot)
     {
@@ -43,7 +28,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
         await using (var first = await SnapshotAsync(NewSnapshot(sessionId)))
             await first.InvokeAsync("Actions", Increments(sessionId, 1, 3), Ct);
 
-        await using var second = await SnapshotAsync(NewSnapshot(sessionId, lastSequence: 9, count: 9));
+        await using var second = await SnapshotAsync(SnapshotAfter(sessionId, 9));
 
         var resync = Assert.IsType<ResyncEntry>(Session(sessionId).History[^1]);
         Assert.Equal(9, resync.Sequence);
@@ -58,7 +43,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
         await using (var first = await SnapshotAsync(NewSnapshot(sessionId)))
             await first.InvokeAsync("Actions", Increments(sessionId, 1, 3), Ct);
 
-        await using var second = await SnapshotAsync(NewSnapshot(sessionId, lastSequence: 3, count: 3));
+        await using var second = await SnapshotAsync(SnapshotAfter(sessionId, 3));
 
         Assert.All(Session(sessionId).History, e => Assert.IsType<ActionEntry>(e));
     }
@@ -70,7 +55,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
         await using var connection = await SnapshotAsync(NewSnapshot(sessionId));
         await connection.InvokeAsync("Actions", Increments(sessionId, 1, 3), Ct);
 
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 5, droppedCount: 4, count: 5), Ct);
+        await connection.InvokeAsync("Snapshot", SnapshotAfter(sessionId, 5) with { DroppedCount = 4 }, Ct);
 
         Assert.Equal(4, Assert.IsType<ResyncEntry>(Session(sessionId).History[^1]).Lost);
     }
@@ -80,7 +65,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
     {
         var sessionId = Guid.NewGuid();
 
-        await using var connection = await SnapshotAsync(NewSnapshot(sessionId, lastSequence: 40, droppedCount: 12, count: 40));
+        await using var connection = await SnapshotAsync(SnapshotAfter(sessionId, 40) with { DroppedCount = 12 });
 
         var resync = Assert.IsType<ResyncEntry>(Assert.Single(Session(sessionId).History));
         Assert.Equal(12, resync.Lost);
@@ -92,7 +77,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
     {
         var sessionId = Guid.NewGuid();
 
-        await using var connection = await SnapshotAsync(NewSnapshot(sessionId, lastSequence: 40, count: 40));
+        await using var connection = await SnapshotAsync(SnapshotAfter(sessionId, 40));
 
         Assert.Empty(Session(sessionId).History);
     }
@@ -105,7 +90,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
         await connection.InvokeAsync("Actions", Increments(sessionId, 1, 3), Ct);
         viewer.Registry.Clear(sessionId);
 
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 8, droppedCount: 5, count: 8), Ct);
+        await connection.InvokeAsync("Snapshot", SnapshotAfter(sessionId, 8) with { DroppedCount = 5 }, Ct);
 
         Assert.Equal(5, Assert.IsType<ResyncEntry>(Assert.Single(Session(sessionId).History)).Lost);
     }
@@ -117,7 +102,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
         await using var connection = await SnapshotAsync(NewSnapshot(sessionId));
         await connection.InvokeAsync("Actions", Increments(sessionId, 1, 5), Ct);
 
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 3, count: 3), Ct);
+        await connection.InvokeAsync("Snapshot", SnapshotAfter(sessionId, 3), Ct);
         Assert.Equal([1, 2, 3, 4, 5], Session(sessionId).Actions.Select(a => a.Sequence));
         var resync = Assert.IsType<ResyncEntry>(Session(sessionId).History[^1]);
         Assert.Null(resync.Lost);
@@ -139,10 +124,10 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
         await using var connection = await SnapshotAsync(NewSnapshot(sessionId));
         await connection.InvokeAsync("Actions", Increments(sessionId, 1, 5), Ct);
 
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 3, count: 3), Ct);
+        await connection.InvokeAsync("Snapshot", SnapshotAfter(sessionId, 3), Ct);
         Assert.Single(OlderSnapshotWarnings(sessionId));
 
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 1, count: 1), Ct);
+        await connection.InvokeAsync("Snapshot", SnapshotAfter(sessionId, 1), Ct);
         Assert.Single(OlderSnapshotWarnings(sessionId));
         Assert.Equal([1, 2, 3, 4, 5], Session(sessionId).Actions.Select(a => a.Sequence)); // nothing rewound
     }
@@ -167,7 +152,7 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
         var sessionId = Guid.NewGuid();
         await using var connection = await SnapshotAsync(NewSnapshot(sessionId));
         await connection.InvokeAsync("Actions", Increments(sessionId, 1, 3), Ct);
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 9, count: 9), Ct);
+        await connection.InvokeAsync("Snapshot", SnapshotAfter(sessionId, 9), Ct);
 
         await connection.InvokeAsync("Actions", Increments(sessionId, 9, 10), Ct);
 
@@ -180,17 +165,17 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
         var sessionId = Guid.NewGuid();
         using var recorder = new ChangeRecorder(viewer.Registry, sessionId);
 
-        var first = await SnapshotAsync(NewSnapshot(sessionId, lastSequence: 2, droppedCount: 2, count: 2));
+        var first = await SnapshotAsync(SnapshotAfter(sessionId, 2) with { DroppedCount = 2 });
         Assert.Equal([new SessionAdded(sessionId), new EntriesAppended(sessionId, 1)], recorder.Changes);
 
         await first.DisposeAsync();
         await Wait.Until(() => recorder.Changes.Count == 3);
         Assert.Equal(new SessionStatusChanged(sessionId, SessionStatus.Disconnected), recorder.Changes[^1]);
 
-        await using var second = await SnapshotAsync(NewSnapshot(sessionId, lastSequence: 7, count: 7));
+        await using var second = await SnapshotAsync(SnapshotAfter(sessionId, 7));
         Assert.Equal([new SessionStatusChanged(sessionId, SessionStatus.Connected), new EntriesAppended(sessionId, 1)], recorder.Changes.Skip(3));
 
-        await second.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 9, droppedCount: 2, count: 9), Ct);
+        await second.InvokeAsync("Snapshot", SnapshotAfter(sessionId, 9) with { DroppedCount = 2 }, Ct);
         Assert.Equal(new EntriesAppended(sessionId, 1), recorder.Changes[^1]);
         Assert.Equal(6, recorder.Changes.Count);
     }

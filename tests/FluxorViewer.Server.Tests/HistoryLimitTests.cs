@@ -4,6 +4,8 @@ using FluxorViewer.Server.Sessions;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using static FluxorViewer.Server.Tests.Messages;
+
 namespace FluxorViewer.Server.Tests;
 
 // IN-6: each Session keeps at most its History limit of entries, discarding the oldest first.
@@ -11,21 +13,14 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
 {
     private static CancellationToken Ct => Wait.Ct;
 
-    private static Snapshot NewSnapshot(Guid sessionId) => new(
-        ProtocolVersion.Current, sessionId, "TestApp", Runtime.Server, DateTimeOffset.UtcNow, LastSequence: 0, DroppedCount: 0,
-        [Counter(0), new FeatureState("Weather", "App.WeatherState", """{"Loading":false}""")]);
-
-    private static FeatureState Counter(long count) => new("Counter", "App.CounterState", $$"""{"Count":{{count}}}""");
-
-    private static ActionRecorded NewAction(Guid sessionId, long sequence) => new(
-        sessionId, sequence, DateTimeOffset.UtcNow, "App.Increment", "{}", [Counter(sequence)]);
+    private static Snapshot WithWeather(Guid sessionId) =>
+        NewSnapshot(sessionId) with { Features = [Counter(0), new FeatureState("Weather", "App.WeatherState", """{"Loading":false}""")] };
 
     private static async Task SendActionsAsync(HubConnection connection, Guid sessionId, long from, long to)
     {
         for (var batch = from; batch <= to; batch += 100)
         {
-            var actions = Enumerable.Range(0, (int)Math.Min(100, to - batch + 1)).Select(i => NewAction(sessionId, batch + i)).ToArray();
-            await connection.InvokeAsync("Actions", actions, Ct);
+            await connection.InvokeAsync("Actions", Increments(sessionId, batch, Math.Min(batch + 99, to)), Ct);
         }
     }
 
@@ -34,7 +29,7 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
     {
         await using var connection = await viewer.ConnectAsync();
         var sessionId = Guid.NewGuid();
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+        await connection.InvokeAsync("Snapshot", WithWeather(sessionId), Ct);
 
         await SendActionsAsync(connection, sessionId, 1, 1500);
 
@@ -52,7 +47,7 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
         await using var limited = new Viewer(new Dictionary<string, string?> { ["history"] = "3" });
         await using var connection = await limited.ConnectAsync();
         var sessionId = Guid.NewGuid();
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+        await connection.InvokeAsync("Snapshot", WithWeather(sessionId), Ct);
 
         await SendActionsAsync(connection, sessionId, 1, 5);
 
@@ -119,12 +114,10 @@ public class HistoryLimitRegistryTests
 
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, new HistoryLimit(3));
 
-    private void Snapshot(long lastSequence, long droppedCount = 0) => registry.SnapshotReceived("c1", new Snapshot(
-        ProtocolVersion.Current, SessionId, "MyApp", Runtime.Server, DateTimeOffset.UtcNow, lastSequence, droppedCount,
-        [new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{lastSequence}}}""")]));
+    private void Snapshot(long lastSequence, long droppedCount = 0) =>
+        registry.SnapshotReceived("c1", SnapshotAfter(SessionId, lastSequence) with { DroppedCount = droppedCount });
 
-    private void Dispatch(long sequence) => registry.ActionsReceived("c1", [new ActionRecorded(
-        SessionId, sequence, DateTimeOffset.UtcNow, "App.Increment", "{}", [new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{sequence}}}""")])]);
+    private void Dispatch(long sequence) => registry.ActionsReceived("c1", [Increment(SessionId, sequence)]);
 
     private string[] History() =>
         [.. registry.Find(SessionId)!.History.Select(e => e is ResyncEntry ? $"R{e.Sequence}" : $"A{e.Sequence}")];

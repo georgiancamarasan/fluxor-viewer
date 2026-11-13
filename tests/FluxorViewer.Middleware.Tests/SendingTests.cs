@@ -33,8 +33,7 @@ public class SendingTests
         var (connection, _) = await harness.StartConnected();
         var gate = await StallSender(harness, connection); // Sequence 2 in flight.
 
-        for (var i = 0; i < 249; i++)
-            harness.Dispatcher.Dispatch(new IncrementAction());
+        harness.DispatchIncrements(249);
         gate.SetResult();
         var actions = await Harness.ActionsSent(connection, 250);
 
@@ -49,8 +48,7 @@ public class SendingTests
         var (connection, first) = await harness.StartConnected();
         var gate = await StallSender(harness, connection); // Sequence 2 in flight.
 
-        for (var i = 0; i < 49; i++) // 3..51: the buffer keeps the newest 10 (42..51); 3..41 are dropped.
-            harness.Dispatcher.Dispatch(new IncrementAction());
+        harness.DispatchIncrements(49); // 3..51: the buffer keeps the newest 10 (42..51); 3..41 are dropped.
         gate.SetResult();
         await Wait.Until(() => connection.Sent.LastOrDefault() is ActionRecorded { Sequence: 51 });
 
@@ -75,8 +73,7 @@ public class SendingTests
         await using var harness = new Harness(bufferSize: 2);
         var (connection, _) = await harness.StartConnected();
 
-        for (var i = 0; i < 20_000; i++) // 2..20001, racing the sender with a full buffer.
-            harness.Dispatcher.Dispatch(new IncrementAction());
+        harness.DispatchIncrements(20_000); // 2..20001, racing the sender with a full buffer.
         await Wait.Until(() => connection.Sent.LastOrDefault() is ActionRecorded { Sequence: 20_001 });
 
         Assert.Empty(UncoveredGaps(connection.Sent));
@@ -111,21 +108,27 @@ public class SendingTests
         await using var harness = new Harness(bufferSize: 5);
         var (connection, _) = await harness.StartConnected();
 
-        for (var round = 1; round <= 2; round++)
-        {
-            // Each round: 1 in flight, then 19 more of which the oldest 14 are dropped and the newest 5 kept.
-            var gate = await StallSender(harness, connection);
-            for (var i = 0; i < 19; i++)
-                harness.Dispatcher.Dispatch(new IncrementAction());
-            gate.SetResult();
-            var expected = round + 1;
-            await Wait.Until(() => connection.Sent.OfType<Snapshot>().Count() == expected);
-        }
+        await Overflow(harness, connection);
+        Assert.Equal([0L, 14L], connection.Sent.OfType<Snapshot>().Select(s => s.DroppedCount));
+        Assert.Equal([0L, 16L], connection.Sent.OfType<Snapshot>().Select(s => s.LastSequence));
 
-        var snapshots = connection.Sent.OfType<Snapshot>().ToList();
-        Assert.Equal([0L, 14L, 14L], snapshots.Select(s => s.DroppedCount));
-        Assert.Equal([0L, 16L, 36L], snapshots.Select(s => s.LastSequence));
-        Assert.Equal(13, connection.Actions.Count); // StoreInitializedAction, then 1 + 5 per round.
+        await Overflow(harness, connection);
+        Assert.Equal([0L, 14L, 14L], connection.Sent.OfType<Snapshot>().Select(s => s.DroppedCount));
+        Assert.Equal([0L, 16L, 36L], connection.Sent.OfType<Snapshot>().Select(s => s.LastSequence));
+        Assert.Equal(13, connection.Actions.Count); // StoreInitializedAction, then 1 + 5 per overflow.
+    }
+
+    /// <summary>
+    /// With a buffer of 5: puts 1 Action in flight, then 19 more of which the oldest 14 are dropped and the newest 5
+    /// kept, and waits for the Snapshot that reports the drop.
+    /// </summary>
+    private static async Task Overflow(Harness harness, FakeViewer.FakeConnection connection)
+    {
+        var snapshots = connection.Sent.OfType<Snapshot>().Count();
+        var gate = await StallSender(harness, connection);
+        harness.DispatchIncrements(19);
+        gate.SetResult();
+        await Wait.Until(() => connection.Sent.OfType<Snapshot>().Count() > snapshots);
     }
 
     [Fact]
@@ -156,16 +159,10 @@ public class SendingTests
         await stalled.StartConnected();
         stalled.Viewer.ActionsGate = Stalled();
 
-        DispatchIncrements(connecting.Dispatcher, 5000);
-        DispatchIncrements(stalled.Dispatcher, 5000);
+        connecting.DispatchIncrements(5000);
+        stalled.DispatchIncrements(5000);
 
         Assert.Equal(5000, connecting.Get<IState<CounterState>>().Value.Count);
         Assert.Equal(5000, stalled.Get<IState<CounterState>>().Value.Count);
-    }
-
-    private static void DispatchIncrements(IDispatcher dispatcher, int count)
-    {
-        for (var i = 0; i < count; i++)
-            dispatcher.Dispatch(new IncrementAction());
     }
 }

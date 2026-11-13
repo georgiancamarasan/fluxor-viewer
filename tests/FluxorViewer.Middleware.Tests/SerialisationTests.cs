@@ -113,8 +113,7 @@ public class SerialisationTests
         await using var harness = new Harness(types: Broken);
         var (connection, _) = await harness.StartConnected();
 
-        for (var i = 0; i < 3; i++)
-            harness.Dispatcher.Dispatch(new IncrementAction());
+        harness.DispatchIncrements(3);
 
         await Harness.ActionsSent(connection, 3);
         Assert.Equal(3, harness.Get<IState<BrokenState>>().Value.Count);

@@ -5,6 +5,8 @@ using FluxorViewer.Server.Sessions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using static FluxorViewer.Server.Tests.Messages;
+
 namespace FluxorViewer.Server.Tests;
 
 // IN-6: what the developer sees once a Session's History has gone past its limit, against a real registry.
@@ -18,20 +20,18 @@ public class HistoryLimitPageTests : BunitContext
     {
         Services.AddSingleton(registry);
         Services.AddSingleton(TimeProvider.System);
-        JSInterop.SetupModule("./Components/ActionListPane.razor.js").SetupVoid("scrollToBottom", _ => true);
-        JSInterop.SetupModule("./Components/DiffPane.razor.js").Setup<bool>("render", _ => true).SetResult(true);
+        JSInterop.SetupPaneModules();
     }
 
-    private void Snapshot() => registry.SnapshotReceived("c1", new Snapshot(
-        ProtocolVersion.Current, SessionId, "MyApp", Runtime.Server, DateTimeOffset.UtcNow, 0, 0,
-        [new FeatureState("Counter", "App.CounterState", """{"Count":0}"""), new FeatureState("Weather", "App.WeatherState", """{"Day":0}""")]));
+    private static FeatureState Weather(long day) => new("Weather", "App.WeatherState", $$"""{"Day":{{day}}}""");
 
-    private void Dispatch(params long[] sequences) => registry.ActionsReceived("c1", [.. sequences.Select(s => new ActionRecorded(
-        SessionId, s, DateTimeOffset.UtcNow, "App.Increment", "{}", [new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{s}}}""")]))]);
+    private void Snapshot() => registry.SnapshotReceived("c1", NewSnapshot(SessionId) with { Features = [Counter(0), Weather(0)] });
+
+    private void Dispatch(params long[] sequences) => registry.ActionsReceived("c1", [.. sequences.Select(s => Increment(SessionId, s))]);
 
     // Actions that change only Weather, so "changed only" hides them while Counter (the first Feature) is selected.
-    private void DispatchWeather(params long[] sequences) => registry.ActionsReceived("c1", [.. sequences.Select(s => new ActionRecorded(
-        SessionId, s, DateTimeOffset.UtcNow, "App.NextDay", "{}", [new FeatureState("Weather", "App.WeatherState", $$"""{"Day":{{s}}}""")]))]);
+    private void DispatchWeather(params long[] sequences) => registry.ActionsReceived("c1",
+        [.. sequences.Select(s => Increment(SessionId, s) with { ActionType = "App.NextDay", ChangedFeatures = [Weather(s)] })]);
 
     private static string? Note(IRenderedComponent<Home> page) =>
         page.FindAll("[data-test=discarded]").SingleOrDefault()?.TextContent.Trim();
