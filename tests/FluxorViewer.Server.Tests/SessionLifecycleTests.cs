@@ -9,15 +9,13 @@ namespace FluxorViewer.Server.Tests;
 // IN-3: Sessions are created, reconnect, disconnect and are cleared through the real ingest hub.
 public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
 {
-    private static CancellationToken Ct => Wait.Ct;
-
     private static readonly DateTimeOffset StartedAt = new(2026, 11, 11, 10, 0, 0, TimeSpan.Zero);
 
     /// <summary>Opens a connection that reports <paramref name="sessionId"/>'s first Snapshot.</summary>
     private async Task<HubConnection> ReportAsync(Guid sessionId)
     {
         var connection = await viewer.ConnectAsync();
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
         return connection;
     }
 
@@ -29,7 +27,7 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
         await using var connection = await viewer.ConnectAsync();
         var sessionId = Guid.Parse("3f2a0000-0000-0000-0000-000000000001");
 
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { AppName = "MyApp", Runtime = Runtime.WebAssembly, StartedAt = StartedAt }, Ct);
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { AppName = "MyApp", Runtime = Runtime.WebAssembly, StartedAt = StartedAt }, Wait.CancellationToken);
 
         var session = Session(sessionId);
         Assert.Equal("MyApp", session.AppName);
@@ -44,8 +42,8 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
     {
         var sessionId = Guid.NewGuid();
         var connection = await viewer.ConnectAsync();
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
-        await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1) }, Ct);
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
+        await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1) }, Wait.CancellationToken);
 
         await connection.DisposeAsync();
 
@@ -58,12 +56,12 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
     {
         var sessionId = Guid.NewGuid();
         var first = await viewer.ConnectAsync();
-        await first.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { AppName = "MyApp" }, Ct);
+        await first.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { AppName = "MyApp" }, Wait.CancellationToken);
         await first.DisposeAsync();
         await Wait.Until(() => Session(sessionId).Status == SessionStatus.Disconnected);
 
         await using var second = await viewer.ConnectAsync();
-        await second.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { AppName = "Renamed", Runtime = Runtime.WebAssembly }, Ct);
+        await second.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { AppName = "Renamed", Runtime = Runtime.WebAssembly }, Wait.CancellationToken);
 
         var session = Session(sessionId);
         Assert.Equal(SessionStatus.Connected, session.Status);
@@ -77,16 +75,16 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
     {
         var sessionId = Guid.NewGuid();
         var old = await viewer.ConnectAsync();
-        await old.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+        await old.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
         await using var current = await viewer.ConnectAsync();
-        await current.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 5 }, Ct);
+        await current.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 5 }, Wait.CancellationToken);
 
-        await old.InvokeAsync("Actions", new[] { Increment(sessionId, 4) }, Ct);
+        await old.InvokeAsync("Actions", new[] { Increment(sessionId, 4) }, Wait.CancellationToken);
         Assert.Empty(Session(sessionId).Actions);
 
         // An ignored close has nothing to wait on, so the newer connection's next batch is the point to look from.
         await old.DisposeAsync();
-        await current.InvokeAsync("Actions", new[] { Increment(sessionId, 6) }, Ct);
+        await current.InvokeAsync("Actions", new[] { Increment(sessionId, 6) }, Wait.CancellationToken);
         var session = Session(sessionId);
         Assert.Equal(SessionStatus.Connected, session.Status);
         Assert.Equal(current.ConnectionId, session.ConnectionId);
@@ -98,8 +96,8 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
     {
         var sessionId = Guid.NewGuid();
         var connection = await viewer.ConnectAsync();
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
-        await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1) }, Ct);
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
+        await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1) }, Wait.CancellationToken);
         await connection.DisposeAsync();
         await Wait.Until(() => Session(sessionId).Status == SessionStatus.Disconnected);
 
@@ -109,7 +107,7 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
         Assert.DoesNotContain(viewer.Registry.GetSessions(), s => s.SessionId == sessionId);
 
         await using var again = await viewer.ConnectAsync();
-        await again.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 1 }, Ct);
+        await again.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 1 }, Wait.CancellationToken);
 
         var session = Session(sessionId);
         Assert.Empty(session.History);
@@ -122,8 +120,8 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
         var sessionId = Guid.NewGuid();
         await using var connection = await viewer.ConnectAsync();
         var weather = new FeatureState("Weather", "App.WeatherState", """{"Loading":false}""");
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { Features = [Counter(0), weather] }, Ct);
-        await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1), Increment(sessionId, 2) }, Ct);
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { Features = [Counter(0), weather] }, Wait.CancellationToken);
+        await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1), Increment(sessionId, 2) }, Wait.CancellationToken);
 
         viewer.Registry.Clear(sessionId);
 
@@ -134,7 +132,7 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
         Assert.Equal("""{"Count":2}""", cleared.Current["Counter"].StateJson);
         Assert.Equal("""{"Loading":false}""", cleared.Current["Weather"].StateJson);
 
-        await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 3) }, Ct);
+        await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 3) }, Wait.CancellationToken);
 
         var next = Assert.Single(Session(sessionId).Actions);
         Assert.Equal(3, next.Sequence);
@@ -146,8 +144,8 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
     {
         var sessionId = Guid.NewGuid();
         await using var connection = await viewer.ConnectAsync();
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
-        await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1) }, Ct);
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
+        await connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1) }, Wait.CancellationToken);
 
         viewer.Registry.Clear(Guid.NewGuid());
 
@@ -196,19 +194,19 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
     {
         await using (var connection = await viewer.ConnectAsync())
         {
-            await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+            await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
             await SendTenBatches(connection, sessionId, afterEach: () => { });
         }
 
         var again = await viewer.ConnectAsync(); // left open: the Session stays connected for the assertions
-        await again.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 20 }, Ct);
+        await again.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 20 }, Wait.CancellationToken);
     }
 
     /// <summary>Reports Actions 1–20, Clearing the Session after each batch, then closes.</summary>
     private async Task ReportClearingAfterEachBatchThenClose(Guid sessionId)
     {
         await using var connection = await viewer.ConnectAsync();
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
         await SendTenBatches(connection, sessionId, afterEach: () => viewer.Registry.Clear(sessionId));
     }
 
@@ -220,7 +218,7 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
     {
         for (var sequence = 1; sequence <= 20; sequence += 2)
         {
-            await connection.InvokeAsync("Actions", new[] { Increment(sessionId, sequence), Increment(sessionId, sequence + 1) }, Ct);
+            await connection.InvokeAsync("Actions", new[] { Increment(sessionId, sequence), Increment(sessionId, sequence + 1) }, Wait.CancellationToken);
             afterEach();
             _ = viewer.Registry.GetSessions();
         }

@@ -13,10 +13,10 @@ namespace FluxorViewer.Server.Tests;
 // IN-5: Resyncs in the Action list and the right pane, against a real registry.
 public class ResyncPageTests : BunitContext
 {
-    private static readonly DateTimeOffset ReceivedAt = new(2026, 11, 12, 10, 2, 3, 45, TimeSpan.Zero);
+    private static readonly DateTimeOffset Timestamp = new(2026, 11, 12, 10, 2, 3, 45, TimeSpan.Zero);
     private static readonly Guid SessionId = Guid.NewGuid();
 
-    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, new FakeTimeProvider(ReceivedAt), HistoryLimit.Default);
+    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, new FakeTimeProvider(Timestamp), HistoryLimit.Default);
 
     private readonly BunitJSModuleInterop diff;
 
@@ -31,12 +31,12 @@ public class ResyncPageTests : BunitContext
         NewSnapshot(SessionId) with { AppName = "MyApp", LastSequence = lastSequence, DroppedCount = droppedCount, Features = [Counter(count)] });
 
     private void Dispatch(long sequence, string type = "App.Increment") =>
-        registry.ActionsReceived("c1", [Increment(SessionId, sequence) with { Timestamp = ReceivedAt, ActionType = type }]);
+        registry.ActionsReceived("c1", [Increment(SessionId, sequence) with { Timestamp = Timestamp, ActionType = type }]);
 
     private static string[] RowTexts(IRenderedComponent<Home> page) =>
         [.. page.FindAll("[data-test=action-list] [role=option]").Select(r => r.QuerySelector("[data-test=type],[data-test=resync]")!.TextContent.Trim())];
 
-    private static void SelectTab(IRenderedComponent<Home> page, string name) =>
+    private static void ShowTab(IRenderedComponent<Home> page, string name) =>
         page.FindAll("[data-test=tab]").Single(t => t.TextContent.Trim() == name).Click();
 
     [Fact]
@@ -139,7 +139,7 @@ public class ResyncPageTests : BunitContext
         var page = Render<Home>();
         page.Find("[data-test=resync-row]").Click();
 
-        SelectTab(page, "Diff");
+        ShowTab(page, "Diff");
 
         Assert.Equal("History was lost before this point; diff unavailable", page.Find("[data-test=diff-message]").TextContent.Trim());
     }
@@ -197,7 +197,7 @@ public class ResyncPageTests : BunitContext
         Dispatch(10);
         var page = Render<Home>();
 
-        SelectTab(page, "Diff");
+        ShowTab(page, "Diff");
 
         var render = Assert.Single(diff.Invocations["render"]);
         Assert.Equal(["""{"Count":9}""", """{"Count":10}"""], render.Arguments.Skip(1).Take(2));

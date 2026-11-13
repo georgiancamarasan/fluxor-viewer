@@ -9,8 +9,6 @@ namespace FluxorViewer.Server.Tests;
 // IN-4: each Action in the History holds the Feature states before and after it.
 public class HistoryTests(Viewer viewer) : IClassFixture<Viewer>
 {
-    private static CancellationToken Ct => Wait.Ct;
-
     /// <summary>A first Snapshot with a Weather Feature beside the Counter.</summary>
     private static Snapshot WithWeather(Guid sessionId) => NewSnapshot(sessionId) with { Features = [Counter(0), Weather(false)] };
 
@@ -23,7 +21,7 @@ public class HistoryTests(Viewer viewer) : IClassFixture<Viewer>
     {
         var connection = await viewer.ConnectAsync();
         snapshot ??= WithWeather(Guid.NewGuid());
-        await connection.InvokeAsync("Snapshot", snapshot, Ct);
+        await connection.InvokeAsync("Snapshot", snapshot, Wait.CancellationToken);
         return (connection, snapshot.SessionId);
     }
 
@@ -35,7 +33,7 @@ public class HistoryTests(Viewer viewer) : IClassFixture<Viewer>
         var (connection, sessionId) = await StartAsync();
         await using var _ = connection;
 
-        await connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 1, Counter(1)) }, Ct);
+        await connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 1, Counter(1)) }, Wait.CancellationToken);
 
         var entry = Assert.Single(Actions(sessionId));
         Assert.Equal("""{"Count":0}""", entry.Before["Counter"].StateJson);
@@ -54,7 +52,7 @@ public class HistoryTests(Viewer viewer) : IClassFixture<Viewer>
             NewAction(sessionId, 1, Counter(1)),
             NewAction(sessionId, 2, Weather(true)),
             NewAction(sessionId, 3, Counter(2), Weather(false)),
-        }, Ct);
+        }, Wait.CancellationToken);
 
         var entries = Actions(sessionId);
         Assert.Same(entries[0].After, entries[1].Before);
@@ -79,7 +77,7 @@ public class HistoryTests(Viewer viewer) : IClassFixture<Viewer>
             NewAction(sessionId, 1, Counter(0)),
             NewAction(sessionId, 2),
             NewAction(sessionId, 3, Counter(1), Weather(true)),
-        }, Ct);
+        }, Wait.CancellationToken);
 
         var entries = Actions(sessionId);
         Assert.Equal(["Counter"], entries[0].ChangedFeatures);
@@ -96,7 +94,7 @@ public class HistoryTests(Viewer viewer) : IClassFixture<Viewer>
         await using var _ = connection;
         var cart = new FeatureState("Cart", "App.CartState", """{"Items":[]}""");
 
-        await connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 1, cart), NewAction(sessionId, 2, Counter(1)) }, Ct);
+        await connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 1, cart), NewAction(sessionId, 2, Counter(1)) }, Wait.CancellationToken);
 
         var entries = Actions(sessionId);
         Assert.False(entries[0].Before.ContainsKey("Cart"));
@@ -109,10 +107,10 @@ public class HistoryTests(Viewer viewer) : IClassFixture<Viewer>
     {
         var (connection, sessionId) = await StartAsync();
         await using var _ = connection;
-        await connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 1, Counter(1)) }, Ct);
+        await connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 1, Counter(1)) }, Wait.CancellationToken);
 
-        await connection.InvokeAsync("Snapshot", SnapshotAfter(sessionId, 9) with { DroppedCount = 8, Features = [Counter(9), Weather(false)] }, Ct);
-        await connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 10, Counter(10)) }, Ct);
+        await connection.InvokeAsync("Snapshot", SnapshotAfter(sessionId, 9) with { DroppedCount = 8, Features = [Counter(9), Weather(false)] }, Wait.CancellationToken);
+        await connection.InvokeAsync("Actions", new[] { NewAction(sessionId, 10, Counter(10)) }, Wait.CancellationToken);
 
         var session = viewer.Registry.Find(sessionId)!;
         Assert.Equal(3, session.History.Count); // the Action, the Resync for the 8 lost, the next Action

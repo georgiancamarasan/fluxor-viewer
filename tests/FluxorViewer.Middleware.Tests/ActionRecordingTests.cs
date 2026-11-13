@@ -11,8 +11,6 @@ namespace FluxorViewer.Middleware.Tests;
 // MW-3: every dispatched Action is reported with only its Changed Features.
 public class ActionRecordingTests
 {
-    private static CancellationToken Ct => Wait.Ct;
-
     [Fact]
     public async Task Reports_only_the_Features_whose_state_changed()
     {
@@ -93,7 +91,7 @@ public class ActionRecordingTests
 
         // Buffered before the connect: StoreInitializedAction and 2 increments, sent after the Snapshot.
         harness.Viewer.ConnectGate.SetResult();
-        var snapshot = Assert.IsType<Snapshot>(await connection.FirstMessage.WaitAsync(Wait.Timeout, Ct));
+        var snapshot = Assert.IsType<Snapshot>(await connection.FirstMessage.WaitAsync(Wait.Timeout, Wait.CancellationToken));
         Assert.Equal(0, snapshot.LastSequence);
         Assert.Equal(0, Count(Assert.Single(snapshot.Features, f => f.Name == "Counter")));
 

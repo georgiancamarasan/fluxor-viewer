@@ -36,15 +36,15 @@ public class SessionSelectionTests
     [Fact]
     public void With_several_Sessions_nothing_is_selected_until_the_developer_picks()
     {
-        var a = Session();
-        var b = Session();
+        var first = Session();
+        var second = Session();
 
-        selection.Update([a, b]);
+        selection.Update([first, second]);
         Assert.Null(selection.Selected);
 
-        selection.Select(b.SessionId);
-        selection.Update([a, b]);
-        Assert.Equal(b.SessionId, selection.Selected);
+        selection.Select(second.SessionId);
+        selection.Update([first, second]);
+        Assert.Equal(second.SessionId, selection.Selected);
     }
 
     [Fact]
@@ -61,27 +61,27 @@ public class SessionSelectionTests
     [Fact]
     public void When_the_selected_Session_is_removed_the_selection_empties_and_a_single_remaining_Session_is_selected()
     {
-        var a = Session();
-        var b = Session(appName: "Other");
-        selection.Update([a, b]);
-        selection.Select(a.SessionId);
-        selection.Update([a, b]);
+        var selected = Session();
+        var remaining = Session(appName: "Other");
+        selection.Update([selected, remaining]);
+        selection.Select(selected.SessionId);
+        selection.Update([selected, remaining]);
 
-        selection.Update([b]);
+        selection.Update([remaining]);
 
-        Assert.Equal(b.SessionId, selection.Selected);
+        Assert.Equal(remaining.SessionId, selection.Selected);
     }
 
     [Fact]
     public void When_the_selected_Session_is_removed_among_several_nothing_is_selected()
     {
-        var a = Session();
-        var b = Session(appName: "B");
-        var c = Session(appName: "C");
-        selection.Update([a, b, c]);
-        selection.Select(a.SessionId);
+        var selected = Session();
+        var second = Session(appName: "B");
+        var third = Session(appName: "C");
+        selection.Update([selected, second, third]);
+        selection.Select(selected.SessionId);
 
-        selection.Update([b, c]);
+        selection.Update([second, third]);
 
         Assert.Null(selection.Selected);
     }
@@ -123,16 +123,16 @@ public class SessionSelectionTests
     [Fact]
     public void After_an_InteractiveAuto_reload_the_WebAssembly_Session_is_followed_once_it_arrives()
     {
-        var wasm = Session();
-        selection.Update([wasm]);
+        var webAssembly = Session();
+        selection.Update([webAssembly]);
 
         var server = Session(runtime: Runtime.Server);
-        selection.Update([Disconnected(wasm), server]);
-        Assert.Equal(wasm.SessionId, selection.Selected);
+        selection.Update([Disconnected(webAssembly), server]);
+        Assert.Equal(webAssembly.SessionId, selection.Selected);
 
-        var newWasm = Session();
-        selection.Update([Disconnected(wasm), server, newWasm]);
-        Assert.Equal(newWasm.SessionId, selection.Selected);
+        var reloadedWebAssembly = Session();
+        selection.Update([Disconnected(webAssembly), server, reloadedWebAssembly]);
+        Assert.Equal(reloadedWebAssembly.SessionId, selection.Selected);
     }
 
     [Fact]

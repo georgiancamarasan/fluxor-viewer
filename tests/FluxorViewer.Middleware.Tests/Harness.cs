@@ -72,7 +72,7 @@ internal sealed class Harness : IAsyncDisposable
     public async Task<FakeViewer.FakeConnection> Start()
     {
         await InitializeAsync();
-        return await Viewer.FirstConnection.WaitAsync(Wait.Timeout, Wait.Ct);
+        return await Viewer.FirstConnection.WaitAsync(Wait.Timeout, Wait.CancellationToken);
     }
 
     /// <summary>
@@ -83,7 +83,7 @@ internal sealed class Harness : IAsyncDisposable
     {
         var connection = await Start();
         Viewer.ConnectGate.TrySetResult();
-        var snapshot = Assert.IsType<Snapshot>(await connection.FirstMessage.WaitAsync(Wait.Timeout, Wait.Ct));
+        var snapshot = Assert.IsType<Snapshot>(await connection.FirstMessage.WaitAsync(Wait.Timeout, Wait.CancellationToken));
         await Wait.Until(() => connection.Actions.Any(a => a.Sequence == 1));
         return (connection, snapshot);
     }

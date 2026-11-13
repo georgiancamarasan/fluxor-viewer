@@ -11,8 +11,6 @@ public class SessionStartTests
 {
     private static TimeSpan Timeout => Wait.Timeout;
 
-    private static CancellationToken Ct => Wait.Ct;
-
     private static ServiceProvider Provider(FakeViewer viewer, CapturingLoggerFactory? logs = null, params Type[] featureTypes)
     {
         var services = new ServiceCollection();
@@ -87,7 +85,7 @@ public class SessionStartTests
         await StartStore(circuit1.ServiceProvider);
         await StartStore(circuit2.ServiceProvider);
 
-        var snapshots = await Task.WhenAll(viewer.Connections.Select(c => c.FirstMessage.WaitAsync(Timeout, Ct)));
+        var snapshots = await Task.WhenAll(viewer.Connections.Select(c => c.FirstMessage.WaitAsync(Timeout, Wait.CancellationToken)));
 
         Assert.Equal(2, snapshots.OfType<Snapshot>().Select(s => s.SessionId).Distinct().Count());
     }
@@ -98,9 +96,9 @@ public class SessionStartTests
         var viewer = FakeViewer.NotUpYet();
         await using var provider = Provider(viewer);
 
-        await StartStore(provider).WaitAsync(Timeout, Ct);
+        await StartStore(provider).WaitAsync(Timeout, Wait.CancellationToken);
 
-        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Ct);
+        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Wait.CancellationToken);
         Assert.Empty(connection.Sent);
     }
 
@@ -128,7 +126,7 @@ public class SessionStartTests
         await using var provider = Provider(viewer, logs);
 
         await StartStore(provider);
-        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Ct);
+        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Wait.CancellationToken);
         await Wait.Until(() => logs.Entries.Any(e => e.Exception is HttpRequestException));
         Assert.Empty(connection.Sent);
         Assert.Equal(LogLevel.Debug, logs.Entries.Single(e => e.Exception is HttpRequestException).Level);
@@ -174,9 +172,9 @@ public class SessionStartTests
         var provider = Provider(viewer);
         var circuit = provider.CreateAsyncScope();
         await StartStore(circuit.ServiceProvider);
-        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Ct);
+        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Wait.CancellationToken);
 
-        await circuit.DisposeAsync().AsTask().WaitAsync(Timeout, Ct);
+        await circuit.DisposeAsync().AsTask().WaitAsync(Timeout, Wait.CancellationToken);
 
         Assert.True(connection.StartToken.IsCancellationRequested);
         Assert.True(connection.Disposed.IsCompleted);
@@ -191,8 +189,8 @@ public class SessionStartTests
         var provider = Provider(viewer);
         var circuit = provider.CreateAsyncScope();
         await StartStore(circuit.ServiceProvider);
-        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Ct);
-        await connection.FirstMessage.WaitAsync(Timeout, Ct);
+        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Wait.CancellationToken);
+        await connection.FirstMessage.WaitAsync(Timeout, Wait.CancellationToken);
 
         await circuit.DisposeAsync();
 
@@ -207,12 +205,12 @@ public class SessionStartTests
         await using var provider = Provider(viewer);
         var circuit = provider.CreateScope();
         await StartStore(circuit.ServiceProvider);
-        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Ct);
-        await connection.FirstMessage.WaitAsync(Timeout, Ct);
+        var connection = await viewer.FirstConnection.WaitAsync(Timeout, Wait.CancellationToken);
+        await connection.FirstMessage.WaitAsync(Timeout, Wait.CancellationToken);
 
         circuit.Dispose();
 
-        await connection.Disposed.WaitAsync(Timeout, Ct);
+        await connection.Disposed.WaitAsync(Timeout, Wait.CancellationToken);
     }
 
     [Theory]

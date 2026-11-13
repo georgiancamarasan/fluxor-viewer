@@ -11,7 +11,7 @@ internal static class Wait
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(5);
 
     /// <summary>The running test's cancellation token.</summary>
-    public static CancellationToken Ct => TestContext.Current.CancellationToken;
+    public static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
 
     /// <summary>Polls until <paramref name="condition"/> holds.</summary>
     /// <exception cref="TimeoutException">It didn't hold within <see cref="Timeout"/>; the message quotes the condition.</exception>
@@ -28,7 +28,7 @@ internal static class Wait
             if (DateTime.UtcNow > deadline)
                 throw new TimeoutException($"Waited {Timeout.TotalSeconds:0} s for {description}, which never held.");
             step();
-            await Task.Delay(PollInterval, Ct);
+            await Task.Delay(PollInterval, Wait.CancellationToken);
         }
     }
 }

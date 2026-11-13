@@ -104,12 +104,12 @@ public class UseFluxorViewerTests
     [InlineData("file:///tmp/viewer")]
     public void Invalid_server_url_fails_fast(string url)
     {
-        var ex = Assert.Throws<ArgumentException>(() =>
+        var exception = Assert.Throws<ArgumentException>(() =>
             Services(o => o.UseFluxorViewer(v => { v.Enabled = true; v.ServerUrl = url; })));
 
-        Assert.Equal("ServerUrl", ex.ParamName);
-        Assert.Contains($"'{url}'", ex.Message);
-        Assert.Contains("absolute http or https URL", ex.Message);
+        Assert.Equal("ServerUrl", exception.ParamName);
+        Assert.Contains($"'{url}'", exception.Message);
+        Assert.Contains("absolute http or https URL", exception.Message);
     }
 
     [Theory]
@@ -117,10 +117,10 @@ public class UseFluxorViewerTests
     [InlineData("  ")]
     public void Blank_app_name_fails_fast(string appName)
     {
-        var ex = Assert.Throws<ArgumentException>(() =>
+        var exception = Assert.Throws<ArgumentException>(() =>
             Services(o => o.UseFluxorViewer(v => { v.Enabled = true; v.AppName = appName; })));
 
-        Assert.Equal("AppName", ex.ParamName);
+        Assert.Equal("AppName", exception.ParamName);
     }
 
     [Theory]
@@ -128,11 +128,11 @@ public class UseFluxorViewerTests
     [InlineData(-5)]
     public void Buffer_size_below_one_fails_fast(int bufferSize)
     {
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
             Services(o => o.UseFluxorViewer(v => { v.Enabled = true; v.BufferSize = bufferSize; })));
 
-        Assert.Equal("BufferSize", ex.ParamName);
-        Assert.Contains("at least 1", ex.Message);
+        Assert.Equal("BufferSize", exception.ParamName);
+        Assert.Contains("at least 1", exception.Message);
     }
 
     [Theory]
@@ -140,11 +140,11 @@ public class UseFluxorViewerTests
     [InlineData(1025)]
     public void Max_depth_outside_1_to_1024_fails_fast(int maxDepth)
     {
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
             Services(o => o.UseFluxorViewer(v => { v.Enabled = true; v.MaxDepth = maxDepth; })));
 
-        Assert.Equal("MaxDepth", ex.ParamName);
-        Assert.Contains("between 1 and 1024", ex.Message);
+        Assert.Equal("MaxDepth", exception.ParamName);
+        Assert.Contains("between 1 and 1024", exception.Message);
     }
 
     [Theory]
@@ -156,7 +156,7 @@ public class UseFluxorViewerTests
     [Fact]
     public void All_problems_are_reported_together_on_one_line()
     {
-        var ex = Assert.Throws<ArgumentException>(() =>
+        var exception = Assert.Throws<ArgumentException>(() =>
             Services(o => o.UseFluxorViewer(v =>
             {
                 v.Enabled = true;
@@ -166,11 +166,11 @@ public class UseFluxorViewerTests
                 v.MaxDepth = 0;
             })));
 
-        Assert.Contains("ServerUrl", ex.Message);
-        Assert.Contains("AppName", ex.Message);
-        Assert.Contains("BufferSize", ex.Message);
-        Assert.Contains("MaxDepth", ex.Message);
-        Assert.DoesNotContain('\n', ex.Message);
+        Assert.Contains("ServerUrl", exception.Message);
+        Assert.Contains("AppName", exception.Message);
+        Assert.Contains("BufferSize", exception.Message);
+        Assert.Contains("MaxDepth", exception.Message);
+        Assert.DoesNotContain('\n', exception.Message);
     }
 
     [Fact]
@@ -183,11 +183,11 @@ public class UseFluxorViewerTests
     [InlineData(true, true)]
     public void Calling_UseFluxorViewer_twice_is_an_error_whether_enabled_or_not(bool firstEnabled, bool secondEnabled)
     {
-        var ex = Assert.Throws<InvalidOperationException>(() =>
+        var exception = Assert.Throws<InvalidOperationException>(() =>
             Services(o => o
                 .UseFluxorViewer(v => v.Enabled = firstEnabled)
                 .UseFluxorViewer(v => v.Enabled = secondEnabled)));
 
-        Assert.Contains("already been called", ex.Message);
+        Assert.Contains("already been called", exception.Message);
     }
 }

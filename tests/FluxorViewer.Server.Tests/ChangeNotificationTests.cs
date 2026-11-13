@@ -177,14 +177,14 @@ public class HubChangeNotificationTests(Viewer viewer) : IClassFixture<Viewer>
 
         await connection.InvokeAsync("Snapshot", new Snapshot(
             ProtocolVersion.Current, sessionId, "TestApp", Runtime.Server, DateTimeOffset.UtcNow, 0, 0,
-            [new FeatureState("Counter", "App.CounterState", """{"Count":0}""")]), Wait.Ct);
+            [new FeatureState("Counter", "App.CounterState", """{"Count":0}""")]), Wait.CancellationToken);
         Assert.Equal([new SessionAdded(sessionId)], recorder.Changes);
 
         await connection.InvokeAsync("Actions", new[]
         {
             new ActionRecorded(sessionId, 1, DateTimeOffset.UtcNow, "App.IncrementAction", "{}",
                 [new FeatureState("Counter", "App.CounterState", """{"Count":1}""")]),
-        }, Wait.Ct);
+        }, Wait.CancellationToken);
         Assert.Equal([new SessionAdded(sessionId), new EntriesAppended(sessionId, 1)], recorder.Changes);
 
         await connection.DisposeAsync();

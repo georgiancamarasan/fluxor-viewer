@@ -12,27 +12,25 @@ namespace FluxorViewer.Server.Tests;
 // IN-2: the hub accepts Snapshots and Actions from middleware and enforces the protocol.
 public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
 {
-    private static CancellationToken Ct => Wait.Ct;
-
     [Fact]
     public async Task A_Snapshot_and_then_batches_of_Actions_reach_the_registry()
     {
         await using var connection = await viewer.ConnectAsync();
         var snapshot = NewSnapshot(Guid.NewGuid());
 
-        await connection.InvokeAsync("Snapshot", snapshot, Ct);
+        await connection.InvokeAsync("Snapshot", snapshot, Wait.CancellationToken);
         var session = viewer.Registry.Find(snapshot.SessionId);
         Assert.NotNull(session);
         Assert.Equal("TestApp", session.AppName);
         Assert.Equal(Runtime.Server, session.Runtime);
         Assert.Equal(connection.ConnectionId, session.ConnectionId);
 
-        await connection.InvokeAsync("Actions", new[] { Increment(snapshot.SessionId, 1), Increment(snapshot.SessionId, 2) }, Ct);
+        await connection.InvokeAsync("Actions", new[] { Increment(snapshot.SessionId, 1), Increment(snapshot.SessionId, 2) }, Wait.CancellationToken);
         session = viewer.Registry.Find(snapshot.SessionId)!;
         Assert.Equal([1L, 2L], session.Actions.Select(a => a.Sequence));
         Assert.Equal("""{"Count":0}""", session.Actions.First().Before["Counter"].StateJson);
 
-        await connection.InvokeAsync("Actions", new[] { Increment(snapshot.SessionId, 3) }, Ct);
+        await connection.InvokeAsync("Actions", new[] { Increment(snapshot.SessionId, 3) }, Wait.CancellationToken);
         session = viewer.Registry.Find(snapshot.SessionId)!;
         Assert.Equal([1L, 2L, 3L], session.Actions.Select(a => a.Sequence));
         Assert.Equal("""{"Count":3}""", session.Current["Counter"].StateJson);
@@ -43,9 +41,9 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     {
         await using var connection = await viewer.ConnectAsync();
         var sessionId = Guid.NewGuid();
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
 
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 40, DroppedCount = 12 }, Ct);
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 40, DroppedCount = 12 }, Wait.CancellationToken);
 
         Assert.Equal(40, viewer.Registry.Find(sessionId)!.LastSequence);
     }
@@ -56,7 +54,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         await using var connection = await viewer.ConnectAsync();
         var snapshot = NewSnapshot(Guid.NewGuid()) with { ProtocolVersion = ProtocolVersion.Current with { Minor = ProtocolVersion.Current.Minor + 7 } };
 
-        await connection.InvokeAsync("Snapshot", snapshot, Ct);
+        await connection.InvokeAsync("Snapshot", snapshot, Wait.CancellationToken);
 
         Assert.NotNull(viewer.Registry.Find(snapshot.SessionId));
     }
@@ -67,17 +65,17 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         await using var connection = await viewer.ConnectAsync();
         var snapshot = NewSnapshot(Guid.NewGuid()) with { ProtocolVersion = new ProtocolVersion(ProtocolVersion.Current.Major + 1, 0) };
 
-        var first = await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", snapshot, Ct));
+        var first = await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", snapshot, Wait.CancellationToken));
         Assert.Contains("protocol version 2.0 is not compatible", first.Message);
         Assert.True(Rejection.IsRejection(first.Message)); // So the middleware stops rather than retrying.
         Assert.Null(viewer.Registry.Find(snapshot.SessionId));
         Assert.Single(viewer.IngestLogs(LogLevel.Warning), l => l.Message.Contains(snapshot.SessionId.ToString()));
 
-        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", snapshot, Ct));
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", snapshot, Wait.CancellationToken));
         Assert.Single(viewer.IngestLogs(LogLevel.Warning), l => l.Message.Contains(snapshot.SessionId.ToString()));
 
         await using var retry = await viewer.ConnectAsync();
-        await Assert.ThrowsAsync<HubException>(() => retry.InvokeAsync("Snapshot", snapshot, Ct));
+        await Assert.ThrowsAsync<HubException>(() => retry.InvokeAsync("Snapshot", snapshot, Wait.CancellationToken));
         Assert.Single(viewer.IngestLogs(LogLevel.Warning), l => l.Message.Contains(snapshot.SessionId.ToString()));
     }
 
@@ -87,11 +85,11 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         await using var connection = await viewer.ConnectAsync();
         var sessionId = Guid.NewGuid();
 
-        var ex = await Assert.ThrowsAsync<HubException>(() =>
-            connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1) }, Ct));
+        var exception = await Assert.ThrowsAsync<HubException>(() =>
+            connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1) }, Wait.CancellationToken));
 
-        Assert.Contains("before a Snapshot", ex.Message);
-        Assert.True(Rejection.IsRejection(ex.Message)); // So the middleware stops rather than retrying.
+        Assert.Contains("before a Snapshot", exception.Message);
+        Assert.True(Rejection.IsRejection(exception.Message)); // So the middleware stops rather than retrying.
         Assert.Null(viewer.Registry.Find(sessionId));
     }
 
@@ -100,12 +98,12 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     {
         await using var connection = await viewer.ConnectAsync();
         var snapshot = NewSnapshot(Guid.NewGuid());
-        await connection.InvokeAsync("Snapshot", snapshot, Ct);
+        await connection.InvokeAsync("Snapshot", snapshot, Wait.CancellationToken);
 
-        var ex = await Assert.ThrowsAsync<HubException>(() =>
-            connection.InvokeAsync("Actions", new[] { Increment(snapshot.SessionId, 1), Increment(Guid.NewGuid(), 2) }, Ct));
+        var exception = await Assert.ThrowsAsync<HubException>(() =>
+            connection.InvokeAsync("Actions", new[] { Increment(snapshot.SessionId, 1), Increment(Guid.NewGuid(), 2) }, Wait.CancellationToken));
 
-        Assert.Contains("reports Session", ex.Message);
+        Assert.Contains("reports Session", exception.Message);
         Assert.Empty(viewer.Registry.Find(snapshot.SessionId)!.Actions); // The whole batch is refused.
     }
 
@@ -115,11 +113,11 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         await using var connection = await viewer.ConnectAsync();
         var first = NewSnapshot(Guid.NewGuid());
         var second = NewSnapshot(Guid.NewGuid());
-        await connection.InvokeAsync("Snapshot", first, Ct);
+        await connection.InvokeAsync("Snapshot", first, Wait.CancellationToken);
 
-        var ex = await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", second, Ct));
+        var exception = await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", second, Wait.CancellationToken));
 
-        Assert.Contains("open a new connection", ex.Message);
+        Assert.Contains("open a new connection", exception.Message);
         Assert.Null(viewer.Registry.Find(second.SessionId));
     }
 
@@ -141,9 +139,9 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     {
         await using var connection = await viewer.ConnectAsync();
 
-        var ex = await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", snapshot, Ct));
+        var exception = await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", snapshot, Wait.CancellationToken));
 
-        Assert.Contains(problem, ex.Message);
+        Assert.Contains(problem, exception.Message);
         Assert.Equal(HubConnectionState.Connected, connection.State); // Rejections keep the connection open.
         Assert.Null(viewer.Registry.Find(snapshot.SessionId));
     }
@@ -163,12 +161,12 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     {
         await using var connection = await viewer.ConnectAsync();
         var sessionId = Guid.NewGuid();
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
 
-        var ex = await Assert.ThrowsAsync<HubException>(() =>
-            connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1), invalid with { SessionId = sessionId } }, Ct));
+        var exception = await Assert.ThrowsAsync<HubException>(() =>
+            connection.InvokeAsync("Actions", new[] { Increment(sessionId, 1), invalid with { SessionId = sessionId } }, Wait.CancellationToken));
 
-        Assert.Contains(problem, ex.Message);
+        Assert.Contains(problem, exception.Message);
         Assert.Empty(viewer.Registry.Find(sessionId)!.Actions);
     }
 
@@ -178,9 +176,9 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         await using var connection = await viewer.ConnectAsync();
         var marker = Guid.NewGuid();
 
-        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Actions", new[] { Increment(marker, 1) }, Ct));
-        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Actions", new[] { Increment(marker, 1) }, Ct));
-        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Actions", new[] { Increment(marker, 1) }, Ct));
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Actions", new[] { Increment(marker, 1) }, Wait.CancellationToken));
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Actions", new[] { Increment(marker, 1) }, Wait.CancellationToken));
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Actions", new[] { Increment(marker, 1) }, Wait.CancellationToken));
 
         bool OnThisConnection((LogLevel Level, string Message) l) => l.Message.Contains(connection.ConnectionId!);
         Assert.Single(viewer.IngestLogs(LogLevel.Warning), OnThisConnection);
@@ -192,7 +190,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     {
         var connection = await viewer.ConnectAsync();
         var snapshot = NewSnapshot(Guid.NewGuid());
-        await connection.InvokeAsync("Snapshot", snapshot, Ct);
+        await connection.InvokeAsync("Snapshot", snapshot, Wait.CancellationToken);
 
         await connection.DisposeAsync();
 
@@ -206,7 +204,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         var bigState = $$"""{"Text":"{{new string('x', 1024 * 1024)}}"}""";
         var snapshot = NewSnapshot(Guid.NewGuid()) with { Features = [new FeatureState("Big", "App.BigState", bigState)] };
 
-        await connection.InvokeAsync("Snapshot", snapshot, Ct);
+        await connection.InvokeAsync("Snapshot", snapshot, Wait.CancellationToken);
 
         Assert.Equal(bigState, viewer.Registry.Find(snapshot.SessionId)!.Current["Big"].StateJson);
     }
@@ -218,7 +216,7 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         using var request = new HttpRequestMessage(HttpMethod.Options, $"{IngestHub.Path}/negotiate?negotiateVersion=1");
         request.Headers.Add("Origin", origin);
         request.Headers.Add("Access-Control-Request-Method", "POST");
-        return await client.SendAsync(request, Ct);
+        return await client.SendAsync(request, Wait.CancellationToken);
     }
 
     [Theory]

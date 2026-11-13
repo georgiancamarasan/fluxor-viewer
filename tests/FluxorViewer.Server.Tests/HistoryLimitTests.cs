@@ -11,8 +11,6 @@ namespace FluxorViewer.Server.Tests;
 // IN-6: each Session keeps at most its History limit of entries, discarding the oldest first.
 public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
 {
-    private static CancellationToken Ct => Wait.Ct;
-
     private static Snapshot WithWeather(Guid sessionId) =>
         NewSnapshot(sessionId) with { Features = [Counter(0), new FeatureState("Weather", "App.WeatherState", """{"Loading":false}""")] };
 
@@ -20,7 +18,7 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
     {
         for (var batch = from; batch <= to; batch += 100)
         {
-            await connection.InvokeAsync("Actions", Increments(sessionId, batch, Math.Min(batch + 99, to)), Ct);
+            await connection.InvokeAsync("Actions", Increments(sessionId, batch, Math.Min(batch + 99, to)), Wait.CancellationToken);
         }
     }
 
@@ -29,7 +27,7 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
     {
         await using var connection = await viewer.ConnectAsync();
         var sessionId = Guid.NewGuid();
-        await connection.InvokeAsync("Snapshot", WithWeather(sessionId), Ct);
+        await connection.InvokeAsync("Snapshot", WithWeather(sessionId), Wait.CancellationToken);
 
         await SendActionsAsync(connection, sessionId, 1, 1500);
 
@@ -47,7 +45,7 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
         await using var limited = new Viewer(new Dictionary<string, string?> { ["history"] = "3" });
         await using var connection = await limited.ConnectAsync();
         var sessionId = Guid.NewGuid();
-        await connection.InvokeAsync("Snapshot", WithWeather(sessionId), Ct);
+        await connection.InvokeAsync("Snapshot", WithWeather(sessionId), Wait.CancellationToken);
 
         await SendActionsAsync(connection, sessionId, 1, 5);
 
@@ -90,9 +88,9 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
             start.ArgumentList.Add(arg);
 
         using var process = Process.Start(start)!;
-        var error = process.StandardError.ReadToEndAsync(Ct);
-        var output = process.StandardOutput.ReadToEndAsync(Ct);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var error = process.StandardError.ReadToEndAsync(Wait.CancellationToken);
+        var output = process.StandardOutput.ReadToEndAsync(Wait.CancellationToken);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Wait.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
         try
         {

@@ -55,7 +55,7 @@ public class ReconnectingTests
         var (first, start) = await harness.StartConnected();
         harness.Viewer.ActionsFailure = new HttpRequestException("Gone");
         harness.Dispatcher.Dispatch(new IncrementAction()); // 2: its send fails, so it counts as delivered.
-        await first.Disposed.WaitAsync(Wait.Timeout, Wait.Ct);
+        await first.Disposed.WaitAsync(Wait.Timeout, Wait.CancellationToken);
         harness.Viewer.ActionsFailure = null;
         harness.Dispatcher.Dispatch(new IncrementAction()); // 3: buffered while offline.
 
@@ -100,7 +100,7 @@ public class ReconnectingTests
             "An unexpected error occurred invoking 'Snapshot' on the server. HubException: FluxorViewer: wrong protocol version") };
         await using var harness = new Harness(viewer: viewer);
         var first = await harness.Start();
-        await first.Disposed.WaitAsync(Wait.Timeout, Wait.Ct); // the rejected attempt is over
+        await first.Disposed.WaitAsync(Wait.Timeout, Wait.CancellationToken); // the rejected attempt is over
         viewer.SnapshotFailure = null;
 
         // Past the longest backoff: a retry would have to start within this step.
@@ -121,12 +121,12 @@ public class ReconnectingTests
         };
         await using var harness = new Harness(viewer: viewer);
         var first = await harness.Start();
-        await first.Disposed.WaitAsync(Wait.Timeout, Wait.Ct);
+        await first.Disposed.WaitAsync(Wait.Timeout, Wait.CancellationToken);
 
         viewer.SnapshotFailure = null;
         await harness.AdvanceUntil(() => harness.Viewer.Connections.Count == 2);
 
-        Assert.IsType<Snapshot>(await harness.Viewer.Connections.Last().FirstMessage.WaitAsync(Wait.Timeout, Wait.Ct));
+        Assert.IsType<Snapshot>(await harness.Viewer.Connections.Last().FirstMessage.WaitAsync(Wait.Timeout, Wait.CancellationToken));
         Assert.DoesNotContain(harness.Logs.Entries, e => e.Level >= LogLevel.Warning);
     }
 
@@ -152,7 +152,7 @@ public class ReconnectingTests
         harness.Viewer.SnapshotFailure = new HttpRequestException("Reset");
 
         harness.Viewer.ConnectGate.SetResult();
-        await connection.Disposed.WaitAsync(Wait.Timeout, Wait.Ct);
+        await connection.Disposed.WaitAsync(Wait.Timeout, Wait.CancellationToken);
         harness.Viewer.SnapshotFailure = null;
         harness.Dispatcher.Dispatch(new IncrementAction()); // 12: 7 dropped.
         await harness.AdvanceUntil(() => harness.Viewer.Connections.Count == 2);
@@ -175,10 +175,10 @@ public class ReconnectingTests
         await harness.AdvanceUntil(() => harness.Viewer.Connections.Count == 2);
         var second = harness.Viewer.Connections.Last();
 
-        var resync = Assert.IsType<Snapshot>(await second.FirstMessage.WaitAsync(Wait.Timeout, Wait.Ct));
+        var resync = Assert.IsType<Snapshot>(await second.FirstMessage.WaitAsync(Wait.Timeout, Wait.CancellationToken));
         Assert.Equal(start.SessionId, resync.SessionId);
         Assert.Equal(1, resync.LastSequence);
-        await first.Disposed.WaitAsync(Wait.Timeout, Wait.Ct);
+        await first.Disposed.WaitAsync(Wait.Timeout, Wait.CancellationToken);
     }
 
     [Fact]
@@ -189,7 +189,7 @@ public class ReconnectingTests
         await harness.Start();
         await Wait.Until(() => harness.Logs.Entries.Any(e => e.Exception is HttpRequestException));
 
-        await harness.DisposeAsync().AsTask().WaitAsync(Wait.Timeout, Wait.Ct); // returns once the sender has stopped
+        await harness.DisposeAsync().AsTask().WaitAsync(Wait.Timeout, Wait.CancellationToken); // returns once the sender has stopped
         viewer.ConnectFailure = null;
 
         harness.Time.Advance(TimeSpan.FromMinutes(1)); // past the longest backoff

@@ -225,11 +225,11 @@ public class HomePageTests : BunitContext
         page.WaitForAssertion(() => Assert.Equal(["Auth", "Counter"], Features(page)));
     }
 
-    private static readonly DateTimeOffset At = new(2026, 11, 12, 10, 2, 3, 45, TimeSpan.Zero);
+    private static readonly DateTimeOffset Timestamp = new(2026, 11, 12, 10, 2, 3, 45, TimeSpan.Zero);
 
     private void Dispatch(string connectionId, Guid sessionId, long sequence, string type, params string[] changed) =>
         registry.ActionsReceived(connectionId, [new ActionRecorded(
-            sessionId, sequence, At, type, "{}", [.. changed.Select(f => new FeatureState(f, $"App.{f}State", $"{{\"v\":{sequence}}}"))])]);
+            sessionId, sequence, Timestamp, type, "{}", [.. changed.Select(f => new FeatureState(f, $"App.{f}State", $"{{\"v\":{sequence}}}"))])]);
 
     private string[] Rows(IRenderedComponent<Home> page) =>
         [.. page.FindAll("[data-test=action-row]").Select(r => r.QuerySelector("[data-test=type]")!.TextContent.Trim())];
@@ -582,7 +582,7 @@ public class HomePageTests : BunitContext
     {
         registry.SnapshotReceived("c1", Nested(Id("aaaa"), "MyApp", "Auth", "Counter"));
         registry.SnapshotReceived("c2", Nested(Id("bbbb"), "Other", "Counter"));
-        registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, At, "App.Increment", "{}",
+        registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, Timestamp, "App.Increment", "{}",
             [new FeatureState("Counter", "App.CounterState", """{"a":{"b":{"c":2}}}""")])]);
         var page = Render<Home>();
         SelectSession(page, Id("aaaa"));
@@ -678,7 +678,7 @@ public class HomePageTests : BunitContext
     public void State_the_browser_cannot_read_shows_an_error_in_the_Diff_tab_instead_of_ending_the_page()
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Counter"]));
-        registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, At, "App.Break", "{}",
+        registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, Timestamp, "App.Break", "{}",
             [new FeatureState("Counter", "App.CounterState", "{not json")])]);
         diff.Setup<bool>("render", call => Equals(call.Arguments[2], "{not json"))
             .SetException(new JSException("Unexpected token 'n', \"{not json\" is not valid JSON"));
@@ -727,7 +727,7 @@ public class HomePageTests : BunitContext
         SelectFeature(page, "Counter");
         Assert.Equal("Select an Action to see what it changed", DiffMessage(page));
 
-        registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, At, "App.Noop", "{}",
+        registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, Timestamp, "App.Noop", "{}",
             [new FeatureState("Counter", "App.CounterState", "{}"), new FeatureState("Broken", "App.BrokenState", """{"$error":"Cycle"}""")])]);
         page.WaitForAssertion(() => Assert.Equal("Counter was replaced with an identical state", DiffMessage(page)));
         Assert.Empty(page.FindAll("[data-test=show-unchanged]"));
@@ -792,7 +792,7 @@ public class HomePageTests : BunitContext
     }
 
     private void DispatchPayload(Guid sessionId, long sequence, string type, string payload) =>
-        registry.ActionsReceived("c1", [new ActionRecorded(sessionId, sequence, At, type, payload, [])]);
+        registry.ActionsReceived("c1", [new ActionRecorded(sessionId, sequence, Timestamp, type, payload, [])]);
 
     private static string PayloadLine(IRenderedComponent<Home> page) => page.Find("[data-test=payload-line]").TextContent;
 
@@ -830,7 +830,7 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
         DispatchPayload(Id("aaaa"), 1, "App.Rename", """{"name":"a"}""");
         DispatchPayload(Id("aaaa"), 2, "App.Rename", """{"name":"b"}""");
-        registry.ActionsReceived("c2", [new ActionRecorded(Id("bbbb"), 1, At, "App.Other", """{"x":1}""", [])]);
+        registry.ActionsReceived("c2", [new ActionRecorded(Id("bbbb"), 1, Timestamp, "App.Other", """{"x":1}""", [])]);
         var page = Render<Home>();
         SelectSession(page, Id("aaaa"));
 

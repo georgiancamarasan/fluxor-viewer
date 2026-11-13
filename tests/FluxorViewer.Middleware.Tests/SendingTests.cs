@@ -9,8 +9,6 @@ namespace FluxorViewer.Middleware.Tests;
 // MW-5: sending is batched, bounded, and never makes dispatch wait.
 public class SendingTests
 {
-    private static CancellationToken Ct => Wait.Ct;
-
     private static TaskCompletionSource Stalled() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>

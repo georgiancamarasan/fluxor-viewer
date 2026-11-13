@@ -25,7 +25,7 @@ internal sealed class RequestRecorder : IDisposable
     public string BaseUrl { get; }
 
     /// <summary>The path of the first request, once it arrives.</summary>
-    public Task<string> FirstPath => firstPath.Task.WaitAsync(Wait.Timeout, Wait.Ct);
+    public Task<string> FirstPath => firstPath.Task.WaitAsync(Wait.Timeout, Wait.CancellationToken);
 
     private async Task AnswerAsync()
     {
