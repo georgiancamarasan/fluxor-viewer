@@ -7,7 +7,10 @@ namespace FluxorViewer.Protocol;
 /// Sequence of the last Action whose state the Snapshot includes: the last one that left the middleware's buffer, sent or
 /// dropped (0 if none). Never less than any Sequence already sent (ADR 0005).
 /// </param>
-/// <param name="DroppedCount">Dropped Actions since the last Snapshot the Viewer accepted.</param>
+/// <param name="DroppedCount">
+/// Dropped Actions up to <paramref name="LastSequence"/> since the last Snapshot the Viewer accepted; ones dropped after it
+/// are counted by the next Snapshot.
+/// </param>
 public sealed record Snapshot(
     ProtocolVersion ProtocolVersion,
     Guid SessionId,

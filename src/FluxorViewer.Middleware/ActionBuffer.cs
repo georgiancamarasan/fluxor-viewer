@@ -117,6 +117,9 @@ internal sealed class ActionBuffer : IDisposable
     private Batch TakeBatch()
     {
         signalled = false;
+        if (pending.Count == 0)
+            return Batch.Empty;
+        TrackedState[] before = [.. baseStates];
         var actions = new List<PendingAction>(Math.Min(pending.Count, MaxBatchSize));
         while (actions.Count < MaxBatchSize && pending.TryDequeue(out var action))
         {
@@ -124,7 +127,7 @@ internal sealed class ActionBuffer : IDisposable
             actions.Add(action);
         }
 
-        return new Batch(actions);
+        return new Batch(actions, before);
     }
 
     private void Drop(PendingAction action)
@@ -158,5 +161,26 @@ internal abstract record Outgoing;
 /// <param name="DroppedCount">Actions dropped since the last Snapshot the Viewer accepted.</param>
 internal sealed record BaseCopy(long LastSequence, long DroppedCount, IReadOnlyList<TrackedState> Features) : Outgoing;
 
-/// <summary>Actions to send in one message; empty when there's nothing to send.</summary>
-internal sealed record Batch(IReadOnlyList<PendingAction> Actions) : Outgoing;
+/// <summary>Actions to send, in as few messages as fit; empty when there's nothing to send.</summary>
+/// <param name="Before">Every Feature's state just before the first of <paramref name="Actions"/>: the base they left.</param>
+internal sealed record Batch(IReadOnlyList<PendingAction> Actions, IReadOnlyList<TrackedState> Before) : Outgoing
+{
+    public static readonly Batch Empty = new([], []);
+
+    /// <summary>
+    /// The state just after the Action at <paramref name="index"/>, as a Snapshot that reports
+    /// <paramref name="droppedCount"/> Actions dropped before it.
+    /// </summary>
+    public BaseCopy After(int index, long droppedCount)
+    {
+        var states = Before.ToArray();
+        var positions = states.Select((tracked, position) => (tracked.Feature, position)).ToDictionary(x => x.Feature, x => x.position);
+        foreach (var action in Actions.Take(index + 1))
+        {
+            foreach (var changed in action.ChangedFeatures)
+                states[positions[changed.Feature]] = changed;
+        }
+
+        return new BaseCopy(Actions[index].Sequence, droppedCount, states);
+    }
+}

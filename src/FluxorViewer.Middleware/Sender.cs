@@ -82,17 +82,27 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
                     }
                     break;
                 case Batch batch:
-                    await SendBatchAsync(connection, batch, cancellationToken);
+                    if (!await SendBatchAsync(connection, batch, cancellationToken))
+                        return false;
                     break;
             }
         }
     }
 
     /// <summary>
-    /// Builds and sends a Snapshot of <paramref name="baseCopy"/>; false if it couldn't be built, which stops the Session
-    /// and logs a Warning.
+    /// Builds and sends a Snapshot of the buffer's base; false if it couldn't be built, which stops the Session and logs a
+    /// Warning.
     /// </summary>
     private async Task<bool> TrySendSnapshotAsync(IViewerConnection connection, BaseCopy baseCopy, CancellationToken cancellationToken)
+    {
+        if (!await TrySendAsync(connection, baseCopy, cancellationToken))
+            return false;
+        buffer.SnapshotSent(baseCopy);
+        return true;
+    }
+
+    /// <summary>Builds and sends a Snapshot of <paramref name="baseCopy"/>; false if it couldn't be built, which stops the Session.</summary>
+    private async Task<bool> TrySendAsync(IViewerConnection connection, BaseCopy baseCopy, CancellationToken cancellationToken)
     {
         Snapshot snapshot;
         try
@@ -108,15 +118,57 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
 
         await connection.SendSnapshotAsync(snapshot, cancellationToken);
         failedAttempts = 0; // Accepted: the next failure starts the backoff over.
-        buffer.SnapshotSent(baseCopy);
         return true;
     }
 
-    private async Task SendBatchAsync(IViewerConnection connection, Batch batch, CancellationToken cancellationToken)
+    /// <summary>
+    /// Sends <paramref name="batch"/>'s Actions in order. Each run of Actions that can't be built is followed straight away
+    /// by a Snapshot of the state just after it, counting them as dropped, so the Viewer records a Resync there instead of
+    /// building on the wrong state (ADR 0005). False if that Snapshot couldn't be built, which stops the Session.
+    /// </summary>
+    private async Task<bool> SendBatchAsync(IViewerConnection connection, Batch batch, CancellationToken cancellationToken)
     {
-        var messages = batch.Actions.Select(TryBuild).OfType<ActionRecorded>();
-        foreach (var part in WireJson.Split(messages, json))
-            await connection.SendActionsAsync(part, cancellationToken);
+        var unbuildable = 0;
+        var cursor = new BatchCursor();
+        while (cursor.Index < batch.Actions.Count)
+        {
+            var start = cursor.Index;
+            foreach (var part in WireJson.Split(BuildUntilUnbuildable(batch, cursor), json))
+            {
+                if (unbuildable > 0 && !await TrySendAsync(connection, batch.After(start - 1, unbuildable), cancellationToken))
+                    return false;
+                unbuildable = 0;
+                await connection.SendActionsAsync(part, cancellationToken);
+            }
+
+            if (cursor.Index < batch.Actions.Count)
+            {
+                unbuildable++;
+                cursor.Index++;
+            }
+        }
+
+        return unbuildable == 0 || await TrySendAsync(connection, batch.After(batch.Actions.Count - 1, unbuildable), cancellationToken);
+    }
+
+    /// <summary>
+    /// The messages for <paramref name="batch"/>'s Actions from <paramref name="cursor"/> on, stopping with the cursor at
+    /// the first that can't be built, or at the end.
+    /// </summary>
+    private IEnumerable<ActionRecorded> BuildUntilUnbuildable(Batch batch, BatchCursor cursor)
+    {
+        for (; cursor.Index < batch.Actions.Count; cursor.Index++)
+        {
+            if (TryBuild(batch.Actions[cursor.Index]) is not { } message)
+                yield break;
+            yield return message;
+        }
+    }
+
+    /// <summary>Where <see cref="BuildUntilUnbuildable"/> has got to in a batch.</summary>
+    private sealed class BatchCursor
+    {
+        public int Index { get; set; }
     }
 
     /// <summary>The message for <paramref name="action"/>, or null (logged at Warning) if it can't be built.</summary>
