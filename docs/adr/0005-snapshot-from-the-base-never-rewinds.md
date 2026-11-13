@@ -10,7 +10,7 @@ This extends [ADR 0002](0002-changed-feature-deltas-with-snapshot-resync.md): ev
 
 ## Considered Options
 
-- **Viewer detects Sequence gaps between Actions**: catches a skipped Action without middleware changes, but needs a second kind of marker whose state stays untrustworthy until some later Snapshot.
+- **Viewer detects Sequence gaps between Actions**: catches an Action that can't be built without middleware changes, but needs a second kind of marker whose state stays untrustworthy until some later Snapshot.
 
 - **Snapshot of the current state, no offline buffer**: simpler, but every disconnect, including the Viewer starting after the app, loses all History in between.
 - **Resend a failed batch after a Snapshot from before it**: loses nothing when the batch never arrived, but when it did arrive, the Viewer would have to rewind to an older Snapshot and then discard the resent Actions as duplicates, which corrupts its diffs.

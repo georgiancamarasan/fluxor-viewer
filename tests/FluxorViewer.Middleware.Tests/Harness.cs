@@ -95,6 +95,23 @@ internal sealed class Harness : IAsyncDisposable
         return (connection, snapshot);
     }
 
+    /// <summary>Makes sending Actions wait from now on, until the returned gate is released.</summary>
+    public TaskCompletionSource StallActions() =>
+        Viewer.ActionsGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// Dispatches one Action and waits until the sender is blocked sending it, so everything dispatched next stays
+    /// queued, and is taken as one batch, once the returned gate is released.
+    /// </summary>
+    public async Task<TaskCompletionSource> StallSender(FakeViewer.FakeConnection connection)
+    {
+        var gate = StallActions();
+        var started = connection.ActionSendsStarted;
+        Dispatcher.Dispatch(new IncrementAction());
+        await Wait.Until(() => connection.ActionSendsStarted > started);
+        return gate;
+    }
+
     /// <summary>Waits for <paramref name="count"/> Actions other than StoreInitializedAction and returns them.</summary>
     public static async Task<IReadOnlyList<ActionRecorded>> ActionsSent(FakeViewer.FakeConnection connection, int count)
     {

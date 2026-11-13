@@ -1,5 +1,3 @@
-using Fluxor;
-
 namespace FluxorViewer.Middleware;
 
 /// <summary>
@@ -15,8 +13,7 @@ internal sealed class ActionBuffer : IDisposable
     private readonly Lock gate = new();
     private readonly int capacity;
     private readonly Queue<PendingAction> pending = new();
-    private readonly Dictionary<IFeature, int> featureIndex;
-    private readonly TrackedState[] baseStates;
+    private readonly FeatureStates baseStates;
     private long baseSequence;
     private long droppedCount;
     private bool snapshotDue = true;
@@ -32,8 +29,7 @@ internal sealed class ActionBuffer : IDisposable
     public ActionBuffer(IReadOnlyList<TrackedState> initial, int capacity)
     {
         this.capacity = capacity;
-        baseStates = [.. initial];
-        featureIndex = baseStates.Select((tracked, index) => (tracked.Feature, index)).ToDictionary(x => x.Feature, x => x.index);
+        baseStates = new FeatureStates(initial);
     }
 
     /// <summary>
@@ -111,7 +107,7 @@ internal sealed class ActionBuffer : IDisposable
     private BaseCopy TakeBase()
     {
         snapshotDue = false;
-        return new BaseCopy(baseSequence, droppedCount, [.. baseStates]);
+        return new BaseCopy(baseSequence, droppedCount, baseStates.ToList());
     }
 
     private Batch TakeBatch()
@@ -119,7 +115,7 @@ internal sealed class ActionBuffer : IDisposable
         signalled = false;
         if (pending.Count == 0)
             return Batch.Empty;
-        TrackedState[] before = [.. baseStates];
+        var before = baseStates.Copy();
         var actions = new List<PendingAction>(Math.Min(pending.Count, MaxBatchSize));
         while (actions.Count < MaxBatchSize && pending.TryDequeue(out var action))
         {
@@ -139,8 +135,7 @@ internal sealed class ActionBuffer : IDisposable
 
     private void MoveBasePast(PendingAction action)
     {
-        foreach (var changed in action.ChangedFeatures)
-            baseStates[featureIndex[changed.Feature]] = changed;
+        baseStates.MovePast(action);
         baseSequence = action.Sequence;
     }
 
@@ -162,25 +157,22 @@ internal abstract record Outgoing;
 internal sealed record BaseCopy(long LastSequence, long DroppedCount, IReadOnlyList<TrackedState> Features) : Outgoing;
 
 /// <summary>Actions to send, in as few messages as fit; empty when there's nothing to send.</summary>
-/// <param name="Before">Every Feature's state just before the first of <paramref name="Actions"/>: the base they left.</param>
-internal sealed record Batch(IReadOnlyList<PendingAction> Actions, IReadOnlyList<TrackedState> Before) : Outgoing
+/// <param name="StatesBefore">
+/// Every Feature's state just before the first of <paramref name="Actions"/>: the base they left. Null when empty.
+/// </param>
+internal sealed record Batch(IReadOnlyList<PendingAction> Actions, FeatureStates? StatesBefore) : Outgoing
 {
-    public static readonly Batch Empty = new([], []);
+    public static readonly Batch Empty = new([], null);
 
     /// <summary>
-    /// The state just after the Action at <paramref name="index"/>, as a Snapshot that reports
-    /// <paramref name="droppedCount"/> Actions dropped before it.
+    /// A Snapshot of the state just after the Action at <paramref name="index"/>, reporting <paramref name="droppedCount"/>
+    /// Actions dropped up to it.
     /// </summary>
-    public BaseCopy After(int index, long droppedCount)
+    public BaseCopy SnapshotAfter(int index, long droppedCount)
     {
-        var states = Before.ToArray();
-        var positions = states.Select((tracked, position) => (tracked.Feature, position)).ToDictionary(x => x.Feature, x => x.position);
+        var states = StatesBefore!.Copy();
         foreach (var action in Actions.Take(index + 1))
-        {
-            foreach (var changed in action.ChangedFeatures)
-                states[positions[changed.Feature]] = changed;
-        }
-
-        return new BaseCopy(Actions[index].Sequence, droppedCount, states);
+            states.MovePast(action);
+        return new BaseCopy(Actions[index].Sequence, droppedCount, states.ToList());
     }
 }

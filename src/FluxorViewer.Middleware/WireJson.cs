@@ -9,7 +9,8 @@ namespace FluxorViewer.Middleware;
 
 /// <summary>
 /// Keeps each message under the Viewer's limit (<see cref="ViewerJson.MaxMessageSize"/>): measures messages as the hub
-/// connection sends them, splits Actions between calls, and shrinks a message that's over it on its own.
+/// connection sends them, sizes Actions for splitting between calls (<see cref="ActionParts"/>), and shrinks a message
+/// that's over it on its own.
 /// </summary>
 internal static class WireJson
 {
@@ -42,31 +43,8 @@ internal static class WireJson
             ChangedFeatures = action.ChangedFeatures.Select((f, i) => f with { StateJson = json[i + 1] }).ToList(),
         });
 
-    /// <summary>
-    /// <paramref name="actions"/> in order, in as few parts as fit <see cref="Budget"/>; an Action too large on its own
-    /// goes in a part by itself. Parts only divide what they're given, so never hold more Actions than it.
-    /// </summary>
-    public static IEnumerable<IReadOnlyList<ActionRecorded>> Split(IEnumerable<ActionRecorded> actions, ViewerJson json)
-    {
-        var budget = Budget(json);
-        var part = new List<ActionRecorded>();
-        long size = 0;
-        foreach (var action in actions)
-        {
-            var actionSize = Size(action, ActionShape) + 1; // and the comma between it and the next
-            if (part.Count > 0 && size + actionSize > budget)
-            {
-                yield return part;
-                (part, size) = ([], 0);
-            }
-
-            part.Add(action);
-            size += actionSize;
-        }
-
-        if (part.Count > 0)
-            yield return part;
-    }
+    /// <summary>How many bytes <paramref name="action"/> takes among a call's Actions, with the comma before the next.</summary>
+    public static long SizeInPart(ActionRecorded action) => Size(action, ActionShape) + 1;
 
     /// <summary>
     /// <paramref name="snapshot"/>, or if it's over <see cref="Budget"/>, a copy with its largest Feature states left out
@@ -148,4 +126,33 @@ internal static class WireJson
 
     /// <summary>How to read a kind of message's values, in order, and copy it with new ones.</summary>
     private sealed record Shape<T>(Func<T, IReadOnlyList<MessageValue>> Values, Func<T, IReadOnlyList<string>, T> With);
+}
+
+/// <summary>
+/// Gathers Actions, in order, into as few parts as fit <see cref="WireJson.Budget"/>, each part one call's Actions; an
+/// Action too large on its own goes in a part by itself. Holds at most one part at a time.
+/// </summary>
+internal sealed class ActionParts(ViewerJson json)
+{
+    private readonly long budget = WireJson.Budget(json);
+    private List<ActionRecorded> part = [];
+    private long size;
+
+    /// <summary>Adds <paramref name="action"/>; returns the part it didn't fit in, to send before it, or no Actions.</summary>
+    public IReadOnlyList<ActionRecorded> Add(ActionRecorded action)
+    {
+        var actionSize = WireJson.SizeInPart(action);
+        var full = size + actionSize > budget ? Flush() : [];
+        part.Add(action);
+        size += actionSize;
+        return full;
+    }
+
+    /// <summary>The part gathered so far, possibly no Actions, to send now; the next Action starts a new one.</summary>
+    public IReadOnlyList<ActionRecorded> Flush()
+    {
+        var full = part;
+        (part, size) = ([], 0);
+        return full;
+    }
 }

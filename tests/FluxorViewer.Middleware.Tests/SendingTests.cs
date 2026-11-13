@@ -9,27 +9,12 @@ namespace FluxorViewer.Middleware.Tests;
 // MW-5: sending is batched, bounded, and never makes dispatch wait.
 public class SendingTests
 {
-    private static TaskCompletionSource Stalled() => new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    /// <summary>
-    /// Dispatches one Action and waits until the sender is blocked sending it, so everything dispatched next stays
-    /// queued until the returned gate is released.
-    /// </summary>
-    private static async Task<TaskCompletionSource> StallSender(Harness harness, FakeViewer.FakeConnection connection)
-    {
-        var gate = harness.Viewer.ActionsGate = Stalled();
-        var started = connection.ActionSendsStarted;
-        harness.Dispatcher.Dispatch(new IncrementAction());
-        await Wait.Until(() => connection.ActionSendsStarted > started);
-        return gate;
-    }
-
     [Fact]
     public async Task Queued_Actions_are_sent_in_order_in_batches_of_at_most_100()
     {
         await using var harness = new Harness();
         var (connection, _) = await harness.StartConnected();
-        var gate = await StallSender(harness, connection); // Sequence 2 in flight.
+        var gate = await harness.StallSender(connection); // Sequence 2 in flight.
 
         harness.DispatchIncrements(249);
         gate.SetResult();
@@ -44,7 +29,7 @@ public class SendingTests
     {
         await using var harness = new Harness(configure: v => v.BufferSize = 10);
         var (connection, first) = await harness.StartConnected();
-        var gate = await StallSender(harness, connection); // Sequence 2 in flight.
+        var gate = await harness.StallSender(connection); // Sequence 2 in flight.
 
         harness.DispatchIncrements(49); // 3..51: the buffer keeps the newest 10 (42..51); 3..41 are dropped.
         gate.SetResult();
@@ -123,7 +108,7 @@ public class SendingTests
     private static async Task Overflow(Harness harness, FakeViewer.FakeConnection connection)
     {
         var snapshots = connection.Sent.OfType<Snapshot>().Count();
-        var gate = await StallSender(harness, connection);
+        var gate = await harness.StallSender(connection);
         harness.DispatchIncrements(19);
         gate.SetResult();
         await Wait.Until(() => connection.Sent.OfType<Snapshot>().Count() > snapshots);
@@ -134,7 +119,7 @@ public class SendingTests
     {
         await using var harness = new Harness();
         var (connection, _) = await harness.StartConnected();
-        var gate = harness.Viewer.ActionsGate = Stalled();
+        var gate = harness.StallActions();
 
         harness.Dispatcher.Dispatch(new IncrementAction());
         harness.Dispatcher.Dispatch(new IncrementAction());
@@ -155,7 +140,7 @@ public class SendingTests
         await connecting.Start();
         await using var stalled = new Harness(configure: v => v.BufferSize = 100);
         await stalled.StartConnected();
-        stalled.Viewer.ActionsGate = Stalled();
+        stalled.StallActions();
 
         connecting.DispatchIncrements(5000);
         stalled.DispatchIncrements(5000);
