@@ -29,7 +29,7 @@ Data flows one way: middleware → Viewer. The Viewer never sends commands to th
 
 | Project | Kind | Responsibility |
 |---|---|---|
-| `src/FluxorViewer.Protocol` | NuGet (`net10.0`) | Message contracts, protocol version and JSON limits (`JsonLimits.MaxDepth`). Shared by both sides so they can't drift. |
+| `src/FluxorViewer.Protocol` | NuGet (`net10.0`) | Message contracts, protocol version and JSON limits (`JsonLimits.MaxDepth`, `JsonLimits.MaxMessageSize`). Shared by both sides so they can't drift. |
 | `src/FluxorViewer.Middleware` | NuGet (`net10.0`, Fluxor 6.x) | Fluxor `IMiddleware` that observes the store and reports to the Viewer. |
 | `src/FluxorViewer.Server` | `dotnet tool` (`fluxor-viewer`) | ASP.NET Core app: ingest hub, in-memory Session history, Blazor Server UI. |
 | `samples/AutoSample` | Sample | InteractiveAuto app (Server + `.Client`) with a few Features, used for manual testing. |
@@ -48,6 +48,7 @@ services.AddFluxor(o => o
         v.AppName    = "MyApp";                          // default: entry assembly name
         v.BufferSize = 1000;                             // default
         v.MaxDepth   = 64;                               // default, 1–1024
+        v.MaxValueSize = 8 * 1024 * 1024;                // default, bytes, 1 to the 32 MB message limit
         v.Enabled    = builder.HostEnvironment.IsDevelopment();
         v.IgnoreAction(a => a is TimerTickAction);       // any number; see Lifecycle
     }));
@@ -60,7 +61,7 @@ When `Enabled` is false the middleware does nothing: no connection, no serialisa
 1. **`InitializeAsync(dispatcher, store)`**: generate a `SessionId` (GUID, one per store instance), detect `Runtime` (`OperatingSystem.IsBrowser()` → `WebAssembly`, otherwise `Server`), capture the state reference of every Feature in `store.Features`, and start the background sender.
 2. **`AfterDispatch(action)`**: runs after reducers. Assign the next `Sequence`, compare each Feature's `GetState()` by reference against the last captured one (Fluxor state is immutable), and append the Action and the **changed** Features' states, as references, to the buffer, whether connected or not. Nothing is serialised here. An **Ignored Action**, one matching any `IgnoreAction` predicate (checked before anything else), skips this step entirely: it takes no Sequence, isn't compared or enqueued, and leaves the captured references alone, so the next reported Action carries the Features it changed (and a Snapshot in between, taken from the base, doesn't see them yet). The Viewer isn't told. A predicate that throws counts as false for that Action, the others still apply, and each predicate's first throw in the process is logged at Warning, later ones at Debug.
 3. **Buffer and base**: one lock-guarded queue, bounded at `BufferSize`, holds every Action not yet sent, from `InitializeAsync` onwards. Alongside it the middleware keeps the **base**: the Feature state references and `Sequence` just after the last Action that left the buffer (sent, or dropped as the oldest when the buffer was full). It starts as the initial states with `Sequence` 0. Moving an Action out of the buffer copies its changed states into the base, so the base costs no serialisation. See [ADR 0005](adr/0005-snapshot-from-the-base-never-rewinds.md).
-4. **Background sender**: its own loop: create a hub connection, start it, send a **Snapshot** of the base (`LastSequence` = the base's `Sequence`, plus `DroppedCount`), then drain the buffer, up to 100 Actions per `Actions` call (whatever is ready, no linger). After any drop it sends a fresh base Snapshot before the next batch. On any failure, or when the connection closes while idle (so a restarted Viewer gets the Session back without waiting for the next Action), it disposes the connection, waits (1 s → 2 s → 4 s → 10 s cap, reset once the Viewer accepts a Snapshot, timed by an injected `TimeProvider`), and starts over with a new connection, which the Viewer binds by the Snapshot's `SessionId`. It serialises each message just before sending. `InitializeAsync` never waits for the connection.
+4. **Background sender**: its own loop: create a hub connection, start it, send a **Snapshot** of the base (`LastSequence` = the base's `Sequence`, plus `DroppedCount`), then drain the buffer, up to 100 Actions per `Actions` call (whatever is ready, no linger), split so no call exceeds the Viewer's message limit (see Safety guarantees). After any drop it sends a fresh base Snapshot before the next batch. On any failure, or when the connection closes while idle (so a restarted Viewer gets the Session back without waiting for the next Action), it disposes the connection, waits (1 s → 2 s → 4 s → 10 s cap, reset once the Viewer accepts a Snapshot, timed by an injected `TimeProvider`), and starts over with a new connection, which the Viewer binds by the Snapshot's `SessionId`. It serialises each message just before sending. `InitializeAsync` never waits for the connection.
 5. **Dispose**: the middleware is scoped like the store, so when the scope ends (e.g. a Blazor circuit closes) it cancels any pending connect and closes the hub connection, and the Viewer sees the Session disconnect.
 
 ### Safety guarantees
@@ -72,8 +73,13 @@ When `Enabled` is false the middleware does nothing: no connection, no serialisa
 - A **Serialisation error** replaces one value, never a message: a Payload or Feature state that fails to serialise (a converter or getter throwing, an unsupported type, too deep) is sent as exactly `{"$error": "<message>"}` and the rest of the Snapshot or Action goes out as normal.
   - The message is the exception's own, which for System.Text.Json includes `Path: $.x`, capped at 500 characters. Exceeding `MaxDepth` gets our own message instead ("Nested deeper than MaxDepth (64) at $.a.b…"), since System.Text.Json's suggests a cycle and `ReferenceHandler.Preserve`.
   - Each failing Action type or Feature is logged at Warning, with the exception, once per process; later failures at Debug.
+  - A value whose JSON is over `MaxValueSize` (UTF-8 bytes, default 8 MB) is a Serialisation error naming its size: "Larger than MaxValueSize (8 MB): 12.4 MB". It's written into a buffer that keeps at most `MaxValueSize` and only counts the rest, so a huge state costs the time to serialise it but never more memory than the cap.
   - If building a message fails outside those values, an Action is skipped (the Viewer sees a gap in Sequences) and a Snapshot stops the Session, both logged at Warning.
-- Not covered: a `StackOverflowException` (e.g. a converter or getter recursing forever) or running out of memory, which .NET can't catch. A value too large for the Viewer's message limit is MW-9 (#32).
+- No message exceeds the Viewer's limit (`JsonLimits.MaxMessageSize`, 32 MB):
+  - The hub connection uses relaxed JSON escaping (`UnsafeRelaxedJsonEscaping`), so `"` costs 2 bytes instead of 6 and non-ASCII goes as UTF-8, and a value's wire size stays close to its JSON size. It's safe because the Viewer parses these strings and never renders them as HTML.
+  - A batch is split by each `ActionRecorded`'s encoded size (with the hub's serializer options), packed greedily up to the limit less 64 KB headroom for framing, still at most 100 Actions per call.
+  - A Snapshot or single Action still over the limit (e.g. several Features each under `MaxValueSize`) is shrunk to fit: its largest values, by encoded size (an Action's Payload alongside its Changed Features), are replaced one at a time with Serialisation errors ("Left out to stay under the Viewer's 32 MB limit (7.1 MB)") until it fits. Only the message changes; the base keeps the real states. Logged at Warning once per process for each subject (the Snapshot, or an Action type), later at Debug. The Session keeps reporting, and never loops reconnecting.
+- Not covered: a `StackOverflowException` (e.g. a converter or getter recursing forever) or running out of memory, which .NET can't catch.
 - Connection failures retry with backoff forever, silently (logged at Debug). Only a rejection by the Viewer (a `HubException` whose message contains `Rejection.Prefix`, which SignalR wraps in its own text; e.g. a protocol version mismatch) or a Snapshot that can't be built stops a Session for good, logged at Warning. Any other `HubException` is an unexpected error in the Viewer (which logs it) and is retried like a lost connection.
 - In WebAssembly there are no blocking threads; the sender is a plain async loop.
 
@@ -93,7 +99,7 @@ ActionRecorded
   ChangedFeatures: [ { Name, StateType, StateJson } ]
 ```
 
-Hub methods on `/hub/ingest`: `Snapshot(Snapshot)` and `Actions(ActionRecorded[])`. One hub connection per Session: the first accepted Snapshot binds the connection to its `SessionId`, and later Snapshots and Actions on it must carry the same one. Rejections are `HubException`s and leave the connection open. CORS allows `localhost`, `127.0.0.1` and `[::1]` origins on any port so WebAssembly apps can connect. The maximum message size is 32 MB (SignalR's default of 32 KB is too small for real Snapshots).
+Hub methods on `/hub/ingest`: `Snapshot(Snapshot)` and `Actions(ActionRecorded[])`. One hub connection per Session: the first accepted Snapshot binds the connection to its `SessionId`, and later Snapshots and Actions on it must carry the same one. Rejections are `HubException`s and leave the connection open. CORS allows `localhost`, `127.0.0.1` and `[::1]` origins on any port so WebAssembly apps can connect. The maximum message size is 32 MB, `JsonLimits.MaxMessageSize`, shared so the middleware splits and shrinks against it (SignalR's default of 32 KB is too small for real Snapshots).
 
 Why changed-Features-only plus Snapshots instead of full state every time: see [ADR 0002](adr/0002-changed-feature-deltas-with-snapshot-resync.md).
 

@@ -41,7 +41,7 @@ What an Action carried: its contents as the Host app sent them.
 _Avoid_: Body, arguments, data, action JSON
 
 **Serialisation error**:
-A Payload or Feature state the Host app couldn't turn into JSON, sent in its place with the reason, so the rest of the History stays intact.
+A Payload or Feature state the Host app couldn't turn into JSON, or that was too large to send, sent in its place with the reason, so the rest of the History stays intact.
 _Avoid_: Serialization failure, bad state, `$error` (in prose)
 
 **History**:
