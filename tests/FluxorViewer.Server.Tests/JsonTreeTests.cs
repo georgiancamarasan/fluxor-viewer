@@ -17,8 +17,8 @@ public class JsonTreeTests : BunitContext
         var tree = Tree("""{"a":{"b":{"c":1}},"n":2}""");
 
         Assert.Equal(["$.a", "$.a.b", "$.n"], Paths(tree));
-        Assert.Equal("true", tree.Find("[data-path='$.a'] > [data-test=toggle]").GetAttribute("aria-expanded"));
-        Assert.Equal("false", tree.Find("[data-path='$.a.b'] > [data-test=toggle]").GetAttribute("aria-expanded"));
+        Assert.Equal("true", tree.Find("[data-test=toggle][data-path='$.a']").GetAttribute("aria-expanded"));
+        Assert.Equal("false", tree.Find("[data-test=toggle][data-path='$.a.b']").GetAttribute("aria-expanded"));
     }
 
     [Fact]
@@ -26,12 +26,12 @@ public class JsonTreeTests : BunitContext
     {
         var tree = Tree("""{"a":{"b":{"c":1}}}""");
 
-        tree.Find("[data-path='$.a.b'] > button[data-test=toggle]").Click();
+        tree.Find("[data-test=toggle][data-path='$.a.b']").Click();
         Assert.Equal(["$.a", "$.a.b", "$.a.b.c"], Paths(tree));
 
-        tree.Find("[data-path='$.a'] > button[data-test=toggle]").Click();
+        tree.Find("[data-test=toggle][data-path='$.a']").Click();
         Assert.Equal(["$.a"], Paths(tree));
-        Assert.Equal("{…} 1 key", tree.Find("[data-path='$.a'] > [data-test=summary]").TextContent.Trim());
+        Assert.Equal("{…} 1 key", tree.Find("[data-test=summary][data-path='$.a']").TextContent.Trim());
     }
 
     [Fact]
@@ -39,7 +39,7 @@ public class JsonTreeTests : BunitContext
     {
         var tree = Tree("""{"a":{"one":{"x":1},"many":{"x":1,"y":2},"list":[1,2,3],"single":[0],"none":[]}}""");
 
-        string Summary(string path) => tree.Find($"[data-path='{path}'] > [data-test=summary]").TextContent.Trim();
+        string Summary(string path) => tree.Find($"[data-test=summary][data-path='{path}']").TextContent.Trim();
         Assert.Equal("{…} 1 key", Summary("$.a.one"));
         Assert.Equal("{…} 2 keys", Summary("$.a.many"));
         Assert.Equal("[…] 3 items", Summary("$.a.list"));
@@ -68,13 +68,13 @@ public class JsonTreeTests : BunitContext
 
         Assert.Equal(["$.list", "$.list[0…99]", "$.list[100…199]", "$.list[200…249]"], Paths(tree));
         Assert.Equal(["list", "[0…99]", "[100…199]", "[200…249]"], tree.FindAll("[data-test=key]").Select(k => k.TextContent));
-        Assert.All(tree.FindAll("[data-path^='$.list['] > [data-test=toggle]"), t => Assert.Equal("false", t.GetAttribute("aria-expanded")));
+        Assert.All(tree.FindAll("[data-test=toggle][data-path^='$.list[']"), t => Assert.Equal("false", t.GetAttribute("aria-expanded")));
 
-        tree.Find("[data-path='$.list[200…249]'] > [data-test=toggle]").Click();
-        var range = tree.FindAll("[data-path^='$.list[2']").Select(n => n.GetAttribute("data-path")).ToArray();
+        tree.Find("[data-test=toggle][data-path='$.list[200…249]']").Click();
+        var range = tree.FindAll("[data-test=node][data-path^='$.list[2']").Select(n => n.GetAttribute("data-path")).ToArray();
         Assert.Equal(51, range.Length);
         Assert.Equal("$.list[200]", range[1]);
-        Assert.Equal("249", tree.Find("[data-path='$.list[249]'] > [data-test=value]").TextContent);
+        Assert.Equal("249", tree.Find("[data-test=value][data-path='$.list[249]']").TextContent);
     }
 
     [Fact]

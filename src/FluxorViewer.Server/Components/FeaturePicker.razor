@@ -1,13 +1,13 @@
-<label class="flex items-center gap-2" data-test="feature-picker">
+<label class="flex items-center gap-2">
     <span class="toolbar-label">Feature</span>
-    <select class="control" value="@Selected" @onchange="OnChange" disabled="@(Features.Count == 0)">
+    <select class="control" data-test="feature-picker" value="@Selected" @onchange="OnChange" disabled="@(Features.Count == 0)">
         @if (HasSession && Features.Count == 0)
         {
-            <option value="" selected>No Features</option>
+            <option value="" selected data-test="feature-option">No Features</option>
         }
         @foreach (var feature in Features)
         {
-            <option value="@feature">@feature</option>
+            <option value="@feature" data-test="feature-option">@feature</option>
         }
     </select>
 </label>

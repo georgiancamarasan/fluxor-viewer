@@ -17,7 +17,7 @@ else
             }
             else
             {
-                @Value(root)
+                @Value(root, Place.Root.Path)
             }
         }
     </div>
@@ -138,15 +138,15 @@ else
 
     private RenderFragment Toggle(string path, bool expanded) => __builder =>
     {
-        <button type="button" class="json-toggle" data-test="toggle" aria-expanded="@(expanded ? "true" : "false")"
+        <button type="button" class="json-toggle" data-test="toggle" data-path="@path" aria-expanded="@(expanded ? "true" : "false")"
                 aria-label="@(expanded ? "Collapse" : "Expand")" @onclick="() => Flip(path, expanded)">@(expanded ? "▾" : "▸")</button>
     };
 
-    /// <summary>A scalar, shown exactly as received.</summary>
-    private static RenderFragment Value(JsonElement value) => __builder =>
+    /// <summary>A scalar at <paramref name="path"/>, shown exactly as received.</summary>
+    private static RenderFragment Value(JsonElement value, string path) => __builder =>
     {
         var kind = Kind(value.ValueKind);
-        <span class="json-@kind" data-test="value" data-kind="@kind">@value.GetRawText()</span>
+        <span class="json-@kind" data-test="value" data-path="@path" data-kind="@kind">@value.GetRawText()</span>
     };
 
     /// <summary>A property's path segment: <c>.name</c> for identifiers, otherwise <c>["name"]</c> JSON-escaped.</summary>
@@ -184,11 +184,11 @@ else
             <span class="json-key" data-test="key">@key</span>:
             @if (!container)
             {
-                @Value(value)
+                @Value(value, place.Path)
             }
             @if (container && !expanded)
             {
-                <span class="json-summary" data-test="summary">@Summary(value)</span>
+                <span class="json-summary" data-test="summary" data-path="@place.Path">@Summary(value)</span>
             }
             @if (expanded)
             {

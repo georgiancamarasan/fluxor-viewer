@@ -4,7 +4,7 @@
         <p class="flex items-center gap-2 text-sm">
             <span class="toolbar-label pl-5">Payload</span>
             <span class="min-w-0 flex-1 rounded-md border border-red-300 bg-red-50 px-2 py-0.5 font-mono text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
-                  data-test="payload-error">Couldn't serialise <TypeName FullName="@Action.ActionType" />: @error</span>
+                  data-test="payload-error">Couldn't serialise <TypeName FullName="@Action.ActionType" data-test="type" />: @error</span>
         </p>
     }
     else if (!line.CanExpand)

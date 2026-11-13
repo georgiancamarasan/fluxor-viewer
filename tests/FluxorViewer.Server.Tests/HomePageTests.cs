@@ -36,7 +36,7 @@ public class HomePageTests : BunitContext
     private static Guid Id(string prefix) => Guid.Parse(prefix + "00000000-0000-0000-0000-000000000000"[prefix.Length..]);
 
     private string[] Options(IRenderedComponent<Home> page) =>
-        [.. page.FindAll("[data-test=session-picker] option").Where(o => !o.HasAttribute("disabled")).Select(o => o.TextContent.Trim())];
+        [.. page.FindAll("[data-test=session-option]").Select(o => o.TextContent.Trim())];
 
     [Fact]
     public void With_no_Sessions_it_waits_and_shows_a_setup_snippet_for_this_Viewer()
@@ -45,7 +45,7 @@ public class HomePageTests : BunitContext
 
         var waiting = page.Find("[data-test=waiting]");
         Assert.Contains("Waiting for a Host app to connect…", waiting.TextContent);
-        var snippet = waiting.QuerySelector("pre")!.TextContent;
+        var snippet = page.Find("[data-test=setup-snippet]").TextContent;
         Assert.Contains("dotnet add package FluxorViewer.Middleware", snippet);
         Assert.Contains("v.Enabled = builder.Environment.IsDevelopment();", snippet);
         Assert.DoesNotContain("ScanAssemblies", snippet); // a second AddFluxor would register a second store
@@ -74,7 +74,7 @@ public class HomePageTests : BunitContext
 
         var page = Render<Home>();
 
-        Assert.Equal(Id("3f2a").ToString(), page.Find("[data-test=session-picker] select").GetAttribute("value"));
+        Assert.Equal(Id("3f2a").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value"));
         Assert.NotNull(page.Find("[data-test=status-dot][data-status=connected]"));
         Assert.Empty(page.FindAll("[data-test=pick-a-session]"));
     }
@@ -98,9 +98,9 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
         var page = Render<Home>();
 
-        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
 
-        Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker] select").GetAttribute("value"));
+        Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value"));
         Assert.Empty(page.FindAll("[data-test=pick-a-session]"));
     }
 
@@ -130,7 +130,7 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb")));
 
         page.WaitForAssertion(() =>
-            Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker] select").GetAttribute("value")));
+            Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value")));
     }
 
     [Fact]
@@ -144,10 +144,10 @@ public class HomePageTests : BunitContext
     }
 
     private string[] Features(IRenderedComponent<Home> page) =>
-        [.. page.FindAll("[data-test=feature-picker] option").Select(o => o.TextContent.Trim())];
+        [.. page.FindAll("[data-test=feature-option]").Select(o => o.TextContent.Trim())];
 
     private string? SelectedFeature(IRenderedComponent<Home> page) =>
-        page.Find("[data-test=feature-picker] select").GetAttribute("value");
+        page.Find("[data-test=feature-picker]").GetAttribute("value");
 
     [Fact]
     public void The_selected_Sessions_Features_are_listed_alphabetically_with_the_first_selected()
@@ -158,7 +158,7 @@ public class HomePageTests : BunitContext
 
         Assert.Equal(["auth", "Counter", "Weather"], Features(page));
         Assert.Equal("auth", SelectedFeature(page));
-        Assert.False(page.Find("[data-test=feature-picker] select").HasAttribute("disabled"));
+        Assert.False(page.Find("[data-test=feature-picker]").HasAttribute("disabled"));
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public class HomePageTests : BunitContext
 
         var page = Render<Home>();
 
-        Assert.True(page.Find("[data-test=feature-picker] select").HasAttribute("disabled"));
+        Assert.True(page.Find("[data-test=feature-picker]").HasAttribute("disabled"));
         Assert.Empty(Features(page));
     }
 
@@ -181,7 +181,7 @@ public class HomePageTests : BunitContext
 
         var page = Render<Home>();
 
-        Assert.True(page.Find("[data-test=feature-picker] select").HasAttribute("disabled"));
+        Assert.True(page.Find("[data-test=feature-picker]").HasAttribute("disabled"));
         Assert.Equal(["No Features"], Features(page));
     }
 
@@ -192,13 +192,13 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other", features: ["Basket"]));
         registry.SnapshotReceived("c3", NewSnapshot(Id("cccc"), "Third", features: ["Counter", "Weather"]));
         var page = Render<Home>();
-        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
 
-        page.Find("[data-test=feature-picker] select").Change("Counter");
-        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        page.Find("[data-test=feature-picker]").Change("Counter");
+        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
         Assert.Equal("Basket", SelectedFeature(page));
 
-        page.Find("[data-test=session-picker] select").Change(Id("cccc").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("cccc").ToString());
         Assert.Equal("Counter", SelectedFeature(page));
     }
 
@@ -207,14 +207,14 @@ public class HomePageTests : BunitContext
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Auth", "Counter"]));
         var page = Render<Home>();
-        page.Find("[data-test=feature-picker] select").Change("Counter");
+        page.Find("[data-test=feature-picker]").Change("Counter");
 
         registry.ConnectionClosed("c1");
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), features: ["Auth", "Counter"]));
 
         page.WaitForAssertion(() =>
         {
-            Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker] select").GetAttribute("value"));
+            Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value"));
             Assert.Equal("Counter", SelectedFeature(page));
         });
     }
@@ -267,7 +267,7 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
 
         var page = Render<Home>();
-        page.Find("[data-test=feature-picker] select").Change("Counter");
+        page.Find("[data-test=feature-picker]").Change("Counter");
 
         Assert.Equal(["true", "false"], page.FindAll("[data-test=action-row]").Select(r => r.GetAttribute("data-dimmed")));
     }
@@ -280,7 +280,7 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
         Dispatch("c1", Id("aaaa"), 3, "App.Decrement", "Counter");
         var page = Render<Home>();
-        page.Find("[data-test=feature-picker] select").Change("Counter");
+        page.Find("[data-test=feature-picker]").Change("Counter");
 
         page.Find("[data-test=changed-only]").Change(true);
         Assert.Equal(["Increment", "Decrement"], Rows(page));
@@ -326,14 +326,14 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 1, "App.A");
         Dispatch("c1", Id("aaaa"), 2, "App.B");
         var page = Render<Home>();
-        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
         Assert.Equal("B", SelectedRow(page));
 
         page.FindAll("[data-test=action-row]")[0].Click();
         Assert.Equal("A", SelectedRow(page));
 
-        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
-        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
         Assert.Equal("B", SelectedRow(page));
     }
 
@@ -481,7 +481,7 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
         Dispatch("c1", Id("aaaa"), 2, "App.Login", "Auth");
         var page = Render<Home>();
-        page.Find("[data-test=feature-picker] select").Change("Counter");
+        page.Find("[data-test=feature-picker]").Change("Counter");
 
         page.Find("[data-test=changed-only]").Change(true);
         Assert.Equal("CounterState · after #1 Increment", Header(page));
@@ -503,7 +503,7 @@ public class HomePageTests : BunitContext
         var page = Render<Home>();
 
         page.FindAll("[data-test=action-row]")[0].Click();
-        page.Find("[data-test=feature-picker] select").Change("Auth");
+        page.Find("[data-test=feature-picker]").Change("Auth");
 
         Assert.Equal("Auth didn't exist at this point", page.Find("[data-test=state-missing]").TextContent.Trim());
         Assert.Empty(page.FindAll("[data-test=state]"));
@@ -517,11 +517,11 @@ public class HomePageTests : BunitContext
              new FeatureState("Odd", "App.OddState", """{"$error":"not really","count":1}""")]));
         var page = Render<Home>();
 
-        page.Find("[data-test=feature-picker] select").Change("Broken");
+        page.Find("[data-test=feature-picker]").Change("Broken");
         Assert.Equal("Couldn't serialise Broken: Cycle detected", page.Find("[data-test=state-error]").TextContent.Trim());
         Assert.Empty(page.FindAll("[data-test=json-tree]"));
 
-        page.Find("[data-test=feature-picker] select").Change("Odd");
+        page.Find("[data-test=feature-picker]").Change("Odd");
         Assert.Empty(page.FindAll("[data-test=state-error]"));
         Assert.Equal(["\"not really\"", "1"], Values(page));
     }
@@ -561,10 +561,10 @@ public class HomePageTests : BunitContext
             [new FeatureState("Deep", "App.DeepState", Deep(1025)), new FeatureState("Torn", "App.TornState", """{"a":""")]));
         var page = Render<Home>();
 
-        page.Find("[data-test=feature-picker] select").Change("Deep");
+        page.Find("[data-test=feature-picker]").Change("Deep");
         Assert.StartsWith("Couldn't read this state: The maximum configured depth of 1024", page.Find("[data-test=state] [data-test=unreadable]").TextContent.Trim());
 
-        page.Find("[data-test=feature-picker] select").Change("Torn");
+        page.Find("[data-test=feature-picker]").Change("Torn");
         Assert.StartsWith("Couldn't read this state: ", page.Find("[data-test=state] [data-test=unreadable]").TextContent.Trim());
         Assert.Empty(page.FindAll("[data-test=json-tree]"));
     }
@@ -574,7 +574,7 @@ public class HomePageTests : BunitContext
         [.. features.Select(f => new FeatureState(f, $"App.{f}State", """{"a":{"b":{"c":1}}}"""))]);
 
     private static bool Open(IRenderedComponent<Home> page, string path) =>
-        page.FindAll($"[data-test=state] [data-path='{path}'] > [data-test=toggle]") is [var toggle]
+        page.FindAll($"[data-test=state] [data-test=toggle][data-path='{path}']") is [var toggle]
         && toggle.GetAttribute("aria-expanded") == "true";
 
     [Fact]
@@ -585,22 +585,22 @@ public class HomePageTests : BunitContext
         registry.ActionsReceived("c1", [new ActionRecorded(Id("aaaa"), 1, At, "App.Increment", "{}",
             [new FeatureState("Counter", "App.CounterState", """{"a":{"b":{"c":2}}}""")])]);
         var page = Render<Home>();
-        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
-        page.Find("[data-test=feature-picker] select").Change("Counter");
+        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
+        page.Find("[data-test=feature-picker]").Change("Counter");
 
-        page.Find("[data-test=state] [data-path='$.a.b'] > [data-test=toggle]").Click();
+        page.Find("[data-test=state] [data-test=toggle][data-path='$.a.b']").Click();
         Assert.True(Open(page, "$.a.b"));
 
-        page.Find("[data-test=feature-picker] select").Change("Auth");
+        page.Find("[data-test=feature-picker]").Change("Auth");
         Assert.False(Open(page, "$.a.b"));
 
-        page.Find("[data-test=feature-picker] select").Change("Counter");
+        page.Find("[data-test=feature-picker]").Change("Counter");
         Assert.True(Open(page, "$.a.b"));
 
         page.Find("[data-test=action-row]").Click();
         Assert.True(Open(page, "$.a.b"));
 
-        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
         Assert.True(Open(page, "$.a.b"));
     }
 
@@ -622,7 +622,7 @@ public class HomePageTests : BunitContext
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
         Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
         var page = Render<Home>();
-        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
 
         Assert.Equal("State", SelectedTab(page));
         Assert.NotEmpty(page.FindAll("[data-test=state]"));
@@ -633,8 +633,8 @@ public class HomePageTests : BunitContext
         Assert.NotEmpty(page.FindAll("[data-test=diff]"));
 
         page.FindAll("[data-test=action-row]")[0].Click();
-        page.Find("[data-test=feature-picker] select").Change("Auth");
-        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        page.Find("[data-test=feature-picker]").Change("Auth");
+        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
         Assert.Equal("Diff", SelectedTab(page));
 
         ShowTab(page, "State");
@@ -689,7 +689,7 @@ public class HomePageTests : BunitContext
 
         Assert.Equal(true, DiffRenders[^1].Arguments[3]);
         page.FindAll("[data-test=action-row]")[0].Click();
-        page.Find("[data-test=feature-picker] select").Change("Counter");
+        page.Find("[data-test=feature-picker]").Change("Counter");
         Assert.True(page.Find("[data-test=show-unchanged]").HasAttribute("checked"));
         Assert.Equal(true, DiffRenders[^1].Arguments[3]);
     }
@@ -701,7 +701,7 @@ public class HomePageTests : BunitContext
             [new FeatureState("Counter", "App.CounterState", "{}"), new FeatureState("Broken", "App.BrokenState", "{}")]));
         var page = Render<Home>();
         ShowTab(page, "Diff");
-        page.Find("[data-test=feature-picker] select").Change("Counter");
+        page.Find("[data-test=feature-picker]").Change("Counter");
 
         Assert.Equal("Select an Action to see what it changed", DiffMessage(page));
 
@@ -710,7 +710,7 @@ public class HomePageTests : BunitContext
         page.WaitForAssertion(() => Assert.Equal("Counter was replaced with an identical state", DiffMessage(page)));
         Assert.Empty(page.FindAll("[data-test=show-unchanged]"));
 
-        page.Find("[data-test=feature-picker] select").Change("Broken");
+        page.Find("[data-test=feature-picker]").Change("Broken");
         Assert.Equal("Couldn't serialise Broken after this Action: Cycle", page.Find("[data-test=diff-error]").TextContent.Trim());
 
         Dispatch("c1", Id("aaaa"), 2, "App.Increment", "Counter");
@@ -730,7 +730,7 @@ public class HomePageTests : BunitContext
         ShowTab(page, "Diff");
 
         page.FindAll("[data-test=action-row]")[0].Click();
-        page.Find("[data-test=feature-picker] select").Change("Auth");
+        page.Find("[data-test=feature-picker]").Change("Auth");
 
         Assert.Equal("Auth didn't exist at this point", DiffMessage(page));
     }
@@ -812,7 +812,7 @@ public class HomePageTests : BunitContext
         DispatchPayload(Id("aaaa"), 2, "App.Rename", """{"name":"b"}""");
         registry.ActionsReceived("c2", [new ActionRecorded(Id("bbbb"), 1, At, "App.Other", """{"x":1}""", [])]);
         var page = Render<Home>();
-        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
 
         TogglePayload(page);
         var toggle = page.Find("[data-test=payload-toggle]");
@@ -824,7 +824,7 @@ public class HomePageTests : BunitContext
         page.FindAll("[data-test=action-row]")[0].Click();
         Assert.Equal(["\"a\""], PayloadValues(page));
 
-        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
         Assert.Equal(["1"], PayloadValues(page));
 
         TogglePayload(page);
@@ -836,7 +836,7 @@ public class HomePageTests : BunitContext
         [.. page.FindAll("[data-test=payload-tree] [data-test=value]").Select(v => v.TextContent)];
 
     private static bool PayloadOpen(IRenderedComponent<Home> page, string path) =>
-        page.FindAll($"[data-test=payload-tree] [data-path='{path}'] > [data-test=toggle]") is [var toggle]
+        page.FindAll($"[data-test=payload-tree] [data-test=toggle][data-path='{path}']") is [var toggle]
         && toggle.GetAttribute("aria-expanded") == "true";
 
     [Fact]
@@ -850,7 +850,7 @@ public class HomePageTests : BunitContext
         page.FindAll("[data-test=action-row]")[0].Click();
         TogglePayload(page);
 
-        page.Find("[data-test=payload-tree] [data-path='$.a.b'] > [data-test=toggle]").Click();
+        page.Find("[data-test=payload-tree] [data-test=toggle][data-path='$.a.b']").Click();
         Assert.True(PayloadOpen(page, "$.a.b"));
 
         page.FindAll("[data-test=action-row]")[1].Click();
@@ -884,7 +884,7 @@ public class HomePageTests : BunitContext
 
         var error = page.Find("[data-test=payload-error]");
         Assert.Equal("Couldn't serialise LoadAction: Cycle detected", error.TextContent.Trim());
-        Assert.Equal("App.Items.LoadAction", error.QuerySelector("[title]")!.GetAttribute("title"));
+        Assert.Equal("App.Items.LoadAction", error.QuerySelector("[data-test=type]")!.GetAttribute("title"));
         Assert.Empty(page.FindAll("[data-test=payload-toggle]"));
 
         page.FindAll("[data-test=action-row]")[1].Click();
@@ -909,13 +909,13 @@ public class HomePageTests : BunitContext
         page.WaitForAssertion(() => Assert.Equal(2, Options(page).Length));
         Assert.False(ClearEnabled(page)); // none picked
 
-        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
         Assert.False(ClearEnabled(page)); // connected, empty History
 
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
         page.WaitForAssertion(() => Assert.True(ClearEnabled(page)));
 
-        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
         registry.ConnectionClosed("c2");
         page.WaitForAssertion(() => Assert.True(ClearEnabled(page))); // disconnected, empty History: can be removed
     }
@@ -933,7 +933,7 @@ public class HomePageTests : BunitContext
         page.Find("[data-test=clear-confirm]").Click();
 
         Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
-        Assert.Equal(Id("aaaa").ToString(), page.Find("[data-test=session-picker] select").GetAttribute("value"));
+        Assert.Equal(Id("aaaa").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value"));
         Assert.NotNull(page.Find("[data-test=no-actions]"));
         var state = page.Find("[role=tabpanel]").TextContent;
         Assert.Contains("· current", state);
@@ -951,14 +951,14 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
         registry.ConnectionClosed("c1");
         var page = Render<Home>();
-        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
 
         OpenClear(page);
         Assert.Equal("Remove disconnected Session MyApp · aaaa?", ClearQuestion(page));
         page.Find("[data-test=clear-confirm]").Click();
 
         Assert.Equal(["● Other · WebAssembly · bbbb"], Options(page));
-        Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker] select").GetAttribute("value")); // the only one left
+        Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value")); // the only one left
     }
 
     [Fact]
@@ -971,7 +971,7 @@ public class HomePageTests : BunitContext
         OpenClear(page);
 
         var prompt = page.Find("[data-test=clear-prompt]");
-        Assert.Equal(["clear-question", "clear-confirm", "clear-cancel"], prompt.Children.Select(c => c.GetAttribute("data-test")));
+        Assert.Equal(["clear-question", "clear-confirm", "clear-cancel"], prompt.QuerySelectorAll("[data-test]").Select(c => c.GetAttribute("data-test")));
         JSInterop.VerifyFocusAsyncInvoke();
     }
 
@@ -1019,10 +1019,10 @@ public class HomePageTests : BunitContext
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other"));
         Dispatch("c1", Id("aaaa"), 1, "App.Increment", "Counter");
         var page = Render<Home>();
-        page.Find("[data-test=session-picker] select").Change(Id("aaaa").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("aaaa").ToString());
         OpenClear(page);
 
-        page.Find("[data-test=session-picker] select").Change(Id("bbbb").ToString());
+        page.Find("[data-test=session-picker]").Change(Id("bbbb").ToString());
 
         Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
     }
@@ -1038,7 +1038,7 @@ public class HomePageTests : BunitContext
 
         registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb")));
 
-        page.WaitForAssertion(() => Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker] select").GetAttribute("value")));
+        page.WaitForAssertion(() => Assert.Equal(Id("bbbb").ToString(), page.Find("[data-test=session-picker]").GetAttribute("value")));
         Assert.Empty(page.FindAll("[data-test=clear-prompt]"));
     }
 
