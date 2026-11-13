@@ -3,6 +3,7 @@ using FluxorViewer.Server.Components.Pages;
 using FluxorViewer.Server.Sessions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.JSInterop;
 
 using static FluxorViewer.Server.Tests.Messages;
 
@@ -34,6 +35,8 @@ public class KeyboardNavigationPageTests : BunitContext
         return Render<Home>();
     }
 
+    private IReadOnlyList<JSRuntimeInvocation> StopNativeScrollingCalls => scroll.Invocations["stopNativeScrolling"];
+
     private static void Press(IRenderedComponent<Home> page, string key) =>
         page.Find("[data-test=action-list]").KeyDown(key);
 
@@ -54,16 +57,24 @@ public class KeyboardNavigationPageTests : BunitContext
     }
 
     [Fact]
-    public void A_keyboard_move_scrolls_its_row_into_view_but_a_click_does_not()
+    public void A_keyboard_move_scrolls_its_row_into_view()
     {
         var page = PageWithIncrements(3);
 
-        Press(page, "Home");
-        Press(page, "ArrowDown");
-        page.FindAll("[data-test=action-row]")[2].Click();
+        Press(page, "ArrowUp");
 
-        page.WaitForAssertion(() => Assert.Equal("3", SelectedSequence(page)));
-        Assert.Equal([0, 1], RowsScrolledIntoView);
+        page.WaitForAssertion(() => Assert.Equal([1], RowsScrolledIntoView));
+    }
+
+    [Fact]
+    public void A_click_does_not_scroll_its_row_into_view()
+    {
+        var page = PageWithIncrements(3);
+
+        page.FindAll("[data-test=action-row]")[0].Click();
+
+        page.WaitForAssertion(() => Assert.Equal("1", SelectedSequence(page)));
+        Assert.Empty(RowsScrolledIntoView);
     }
 
     [Fact]
@@ -82,13 +93,30 @@ public class KeyboardNavigationPageTests : BunitContext
     [Fact]
     public void Each_time_the_list_appears_its_navigation_keys_are_kept_from_scrolling_it_natively()
     {
-        var page = PageWithIncrements(1);
-        page.WaitForAssertion(() => Assert.Single(scroll.Invocations["stopNativeScrolling"]));
+        registry.SnapshotReceived("c1", NewSnapshot(SessionId));
+        registry.ActionsReceived("c1", [Increment(SessionId, 1)]);
+
+        var page = Render<Home>();
+
+        page.WaitForAssertion(() => Assert.Single(StopNativeScrollingCalls));
 
         registry.Clear(SessionId);
+
         page.WaitForAssertion(() => Assert.Empty(page.FindAll("[data-test=action-list]")));
+
         registry.ActionsReceived("c1", [Increment(SessionId, 2)]);
 
-        page.WaitForAssertion(() => Assert.Equal(2, scroll.Invocations["stopNativeScrolling"].Count));
+        page.WaitForAssertion(() => Assert.Equal(2, StopNativeScrollingCalls.Count));
+    }
+
+    [Fact]
+    public void A_key_with_nowhere_to_go_scrolls_nothing()
+    {
+        var page = PageWithIncrements(3);
+
+        Press(page, "ArrowDown");
+
+        Assert.Equal("3", SelectedSequence(page));
+        Assert.Empty(RowsScrolledIntoView);
     }
 }

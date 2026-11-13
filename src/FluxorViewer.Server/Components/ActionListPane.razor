@@ -169,17 +169,20 @@ else if (List.VisibleActionCount == 0)
         return SelectedChanged.InvokeAsync();
     }
 
-    // ↑/↓/Home/End move the selection as a click would; the JS module stops them scrolling the list natively.
-    private Task OnKeyDown(KeyboardEventArgs key)
+    // ↑/↓/Home/End move the selection as a click would; the JS module stops them scrolling the list natively. A key with
+    // nowhere to go does nothing, so holding it neither re-renders the right pane nor scrolls back to the selection.
+    private Task OnKeyDown(KeyboardEventArgs keyboard)
     {
-        switch (key.Key)
+        var moved = keyboard.Key switch
         {
-            case "ArrowUp": List.SelectPrevious(); break;
-            case "ArrowDown": List.SelectNext(); break;
-            case "Home": List.SelectFirst(); break;
-            case "End": List.SelectLast(); break;
-            default: return Task.CompletedTask;
-        }
+            "ArrowUp" => List.SelectPrevious(),
+            "ArrowDown" => List.SelectNext(),
+            "Home" => List.SelectFirst(),
+            "End" => List.SelectLast(),
+            _ => false,
+        };
+        if (!moved)
+            return Task.CompletedTask;
         revealSelected = true;
         return SelectedChanged.InvokeAsync();
     }

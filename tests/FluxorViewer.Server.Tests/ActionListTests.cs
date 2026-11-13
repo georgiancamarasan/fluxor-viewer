@@ -366,16 +366,26 @@ public class ActionListTests
     }
 
     [Fact]
-    public void Moving_past_either_end_does_nothing()
+    public void Moving_past_the_newest_row_does_nothing()
     {
         list.Update(Session(Action(1), Action(2)), null);
 
-        list.SelectNext();
+        var moved = list.SelectNext();
+
+        Assert.False(moved);
         Assert.Equal(2, list.Selected?.Sequence);
         Assert.True(list.Following);
+    }
 
+    [Fact]
+    public void Moving_past_the_oldest_row_does_nothing()
+    {
+        list.Update(Session(Action(1), Action(2)), null);
         list.Select(1);
-        list.SelectPrevious();
+
+        var moved = list.SelectPrevious();
+
+        Assert.False(moved);
         Assert.Equal(1, list.Selected?.Sequence);
         Assert.False(list.Following);
     }

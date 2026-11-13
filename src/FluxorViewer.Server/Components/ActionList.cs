@@ -134,32 +134,32 @@ public sealed class ActionList
         Refilter();
     }
 
-    /// <summary>
-    /// ↑: selects the nearest visible row before the selection in History order (even while its row is hidden), as
-    /// <see cref="Select"/> would. Does nothing without one.
-    /// </summary>
-    public void SelectPrevious() => SelectRow(Rows.LastOrDefault(row => row.Entry.Id < Selected?.Id));
+    // UI-9: each key moves as clicking the row it lands on would, and returns whether the selection moved; a key with
+    // nowhere to go does nothing. Ids grow in History order, so comparing them with the selection's finds the nearest
+    // row whether or not the selection's own row is shown.
 
-    /// <summary>
-    /// ↓: selects the nearest visible row after the selection in History order (even while its row is hidden), as
-    /// <see cref="Select"/> would. Does nothing without one.
-    /// </summary>
-    public void SelectNext() => SelectRow(Rows.FirstOrDefault(row => row.Entry.Id > Selected?.Id));
+    /// <summary>↑: selects the nearest visible row before the selection in History order, as <see cref="Select"/> would.</summary>
+    /// <returns>Whether there was one to select.</returns>
+    public bool SelectPrevious() => SelectRow(Rows.LastOrDefault(row => row.Entry.Id < Selected?.Id));
 
-    /// <summary>Home: selects the oldest visible row, as <see cref="Select"/> would. Does nothing without rows.</summary>
-    public void SelectFirst() => SelectRow(Rows.FirstOrDefault());
+    /// <summary>↓: selects the nearest visible row after the selection in History order, as <see cref="Select"/> would.</summary>
+    /// <returns>Whether there was one to select.</returns>
+    public bool SelectNext() => SelectRow(Rows.FirstOrDefault(row => row.Entry.Id > Selected?.Id));
 
-    /// <summary>
-    /// End: selects the newest visible row, as <see cref="Select"/> would, so follow mode resumes. Does nothing without
-    /// rows.
-    /// </summary>
-    public void SelectLast() => SelectRow(Rows.LastOrDefault());
+    /// <summary>Home: selects the oldest visible row, as <see cref="Select"/> would.</summary>
+    /// <returns>Whether the selection moved: false without rows or when it was already there.</returns>
+    public bool SelectFirst() => SelectRow(Rows.FirstOrDefault());
 
-    // Ids grow in History order, so comparing them finds the nearest row whether or not the selection's row is shown.
-    private void SelectRow(ListRow? row)
+    /// <summary>End: selects the newest visible row, as <see cref="Select"/> would, so follow mode resumes.</summary>
+    /// <returns>Whether the selection moved: false without rows or when it was already there.</returns>
+    public bool SelectLast() => SelectRow(Rows.LastOrDefault());
+
+    private bool SelectRow(ListRow? row)
     {
-        if (row is not null)
-            Select(row.Entry.Id);
+        if (row is null || row.Entry.Id == Selected?.Id)
+            return false;
+        Select(row.Entry.Id);
+        return true;
     }
 
     /// <summary>Turns follow mode back on (the "▼ N new" pill), selecting the newest visible row.</summary>
