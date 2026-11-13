@@ -32,15 +32,15 @@ public class ReconnectingTests
         var viewer = new FakeViewer { ConnectFailure = new HttpRequestException("Refused") };
         await using var harness = new Harness(viewer: viewer);
         await harness.Start();
-
         harness.Dispatcher.Dispatch(new IncrementAction()); // 2
         await harness.AdvanceUntil(() => viewer.Connections.Count == 2); // Refused again.
         harness.Dispatcher.Dispatch(new IncrementAction()); // 3
+
         viewer.ConnectFailure = null;
         await harness.AdvanceUntil(() => viewer.Connections.Count == 3);
+
         var connection = viewer.Connections.Last();
         await Harness.ActionsSent(connection, 2);
-
         var snapshot = Assert.IsType<Snapshot>(connection.Sent.First());
         Assert.Equal(0, snapshot.LastSequence);
         Assert.Equal(0, snapshot.DroppedCount);
@@ -55,15 +55,15 @@ public class ReconnectingTests
         await using var harness = new Harness();
         var (first, start) = await harness.StartConnected();
         harness.Viewer.ActionsFailure = new HttpRequestException("Gone");
-
         harness.Dispatcher.Dispatch(new IncrementAction()); // 2: its send fails, so it counts as delivered.
         await first.Disposed.WaitAsync(Wait.Timeout, Wait.Ct);
         harness.Viewer.ActionsFailure = null;
         harness.Dispatcher.Dispatch(new IncrementAction()); // 3: buffered while offline.
+
         await harness.AdvanceUntil(() => harness.Viewer.Connections.Count == 2);
+
         var second = harness.Viewer.Connections.Last();
         await Harness.ActionsSent(second, 1);
-
         var resync = Assert.IsType<Snapshot>(second.Sent.First());
         Assert.Equal(start.SessionId, resync.SessionId);
         Assert.Equal(2, resync.LastSequence);
@@ -78,28 +78,29 @@ public class ReconnectingTests
     {
         await using var harness = new Harness(viewer: new FakeViewer { ConnectFailure = new HttpRequestException("Refused") });
         await harness.Start();
-        var started = harness.Time.GetUtcNow();
-        var attempts = new List<DateTimeOffset> { started };
 
-        async Task NextAttempt()
-        {
-            var count = harness.Viewer.Connections.Count;
-            await harness.AdvanceUntil(() => harness.Viewer.Connections.Count > count);
-            attempts.Add(harness.Time.GetUtcNow());
-        }
+        Assert.Equal(1, await SecondsToNextAttempt(harness));
+        Assert.Equal(2, await SecondsToNextAttempt(harness));
+        Assert.Equal(4, await SecondsToNextAttempt(harness));
+        Assert.Equal(10, await SecondsToNextAttempt(harness));
+        Assert.Equal(10, await SecondsToNextAttempt(harness));
 
-        for (var i = 0; i < 5; i++)
-            await NextAttempt();
         harness.Viewer.ConnectFailure = null;
-        await NextAttempt();
-        var connected = harness.Viewer.Connections.Last();
-        await Wait.Until(() => connected.Actions.Count == 1);
+        Assert.Equal(10, await SecondsToNextAttempt(harness));
+
+        await Wait.Until(() => harness.Viewer.Connections.Last().Actions.Count == 1);
         harness.Viewer.ActionsFailure = new HttpRequestException("Gone");
         harness.Dispatcher.Dispatch(new IncrementAction());
-        await NextAttempt();
+        Assert.Equal(1, await SecondsToNextAttempt(harness));
+    }
 
-        var gaps = attempts.Zip(attempts.Skip(1), (a, b) => Math.Round((b - a).TotalSeconds));
-        Assert.Equal([1d, 2d, 4d, 10d, 10d, 10d, 1d], gaps);
+    /// <summary>Advances fake time to the next connection attempt and says how many seconds that took.</summary>
+    private static async Task<double> SecondsToNextAttempt(Harness harness)
+    {
+        var from = harness.Time.GetUtcNow();
+        var attempts = harness.Viewer.Connections.Count;
+        await harness.AdvanceUntil(() => harness.Viewer.Connections.Count > attempts);
+        return Math.Round((harness.Time.GetUtcNow() - from).TotalSeconds);
     }
 
     [Fact]

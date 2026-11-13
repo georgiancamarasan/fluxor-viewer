@@ -118,16 +118,19 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
         await connection.InvokeAsync("Actions", Increments(sessionId, 1, 5), Ct);
 
         await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 3, count: 3), Ct);
-        await connection.InvokeAsync("Actions", Increments(sessionId, 4, 4), Ct);
-
-        var session = Session(sessionId);
-        Assert.Equal([1, 2, 3, 4, 5], session.Actions.Take(5).Select(a => a.Sequence));
-        var resync = Assert.IsType<ResyncEntry>(session.History[5]);
+        Assert.Equal([1, 2, 3, 4, 5], Session(sessionId).Actions.Select(a => a.Sequence));
+        var resync = Assert.IsType<ResyncEntry>(Session(sessionId).History[^1]);
         Assert.Null(resync.Lost);
         Assert.Equal(3, resync.Sequence);
-        Assert.Equal(4, Assert.IsType<ActionEntry>(session.History[6]).Sequence); // after the Snapshot, 4 is no duplicate
-        Assert.Equal(4, session.LastSequence);
+
+        await connection.InvokeAsync("Actions", Increments(sessionId, 4, 4), Ct);
+        Assert.Equal(4, Assert.IsType<ActionEntry>(Session(sessionId).History[^1]).Sequence); // after the Snapshot, 4 is no duplicate
+        Assert.Equal(4, Session(sessionId).LastSequence);
     }
+
+    private IEnumerable<string> OlderSnapshotWarnings(Guid sessionId) => viewer.Logs
+        .Where(l => l.Level == LogLevel.Warning && l.Category == "FluxorViewer.Server.Sessions.SessionRegistry" && l.Message.Contains(sessionId.ToString()))
+        .Select(l => l.Message);
 
     [Fact]
     public async Task Older_Snapshots_are_logged_as_a_Warning_once_per_Session()
@@ -137,54 +140,58 @@ public class ResyncTests(Viewer viewer) : IClassFixture<Viewer>
         await connection.InvokeAsync("Actions", Increments(sessionId, 1, 5), Ct);
 
         await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 3, count: 3), Ct);
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 1, count: 1), Ct);
+        Assert.Single(OlderSnapshotWarnings(sessionId));
 
-        Assert.Single(viewer.Logs, l =>
-            l.Level == LogLevel.Warning && l.Category == typeof(SessionRegistry).FullName && l.Message.Contains(sessionId.ToString()));
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 1, count: 1), Ct);
+        Assert.Single(OlderSnapshotWarnings(sessionId));
         Assert.Equal([1, 2, 3, 4, 5], Session(sessionId).Actions.Select(a => a.Sequence)); // nothing rewound
     }
 
     [Fact]
-    public async Task Actions_at_or_before_the_last_received_Sequence_are_ignored()
+    public async Task Actions_at_or_before_the_last_received_Action_are_ignored()
     {
         var sessionId = Guid.NewGuid();
         await using var connection = await SnapshotAsync(NewSnapshot(sessionId));
         await connection.InvokeAsync("Actions", Increments(sessionId, 1, 3), Ct);
 
         await connection.InvokeAsync("Actions", Increments(sessionId, 2, 4), Ct);
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 9, count: 9), Ct);
-        await connection.InvokeAsync("Actions", Increments(sessionId, 9, 10), Ct);
 
         var session = Session(sessionId);
-        Assert.Equal([1, 2, 3, 4, 10], session.Actions.Select(a => a.Sequence));
+        Assert.Equal([1, 2, 3, 4], session.Actions.Select(a => a.Sequence));
         Assert.Equal("""{"Count":3}""", session.Actions.ElementAt(3).Before["Counter"].StateJson);
+    }
+
+    [Fact]
+    public async Task Actions_at_or_before_the_last_Snapshot_are_ignored()
+    {
+        var sessionId = Guid.NewGuid();
+        await using var connection = await SnapshotAsync(NewSnapshot(sessionId));
+        await connection.InvokeAsync("Actions", Increments(sessionId, 1, 3), Ct);
+        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 9, count: 9), Ct);
+
+        await connection.InvokeAsync("Actions", Increments(sessionId, 9, 10), Ct);
+
+        Assert.Equal([1, 2, 3, 10], Session(sessionId).Actions.Select(a => a.Sequence));
     }
 
     [Fact]
     public async Task A_Resync_raises_EntriesAppended_along_with_any_other_change()
     {
         var sessionId = Guid.NewGuid();
-        var changes = new List<SessionChange>();
-        void Record(SessionChange c)
-        {
-            if (c.SessionId == sessionId)
-                lock (changes) changes.Add(c);
-        }
-        viewer.Registry.Changed += Record;
-        await using (var first = await SnapshotAsync(NewSnapshot(sessionId, lastSequence: 2, droppedCount: 2, count: 2)))
-            await first.InvokeAsync("Actions", Increments(sessionId, 3, 3), Ct);
-        await Wait.Until(() => viewer.Registry.Find(sessionId)!.Status == SessionStatus.Disconnected);
-        await using var second = await SnapshotAsync(NewSnapshot(sessionId, lastSequence: 7, count: 7));
-        await second.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 9, droppedCount: 2, count: 9), Ct);
-        viewer.Registry.Changed -= Record;
+        using var recorder = new ChangeRecorder(viewer.Registry, sessionId);
 
-        Assert.Equal(
-        [
-            new SessionAdded(sessionId), new EntriesAppended(sessionId, 1),
-            new EntriesAppended(sessionId, 1),
-            new SessionStatusChanged(sessionId, SessionStatus.Disconnected),
-            new SessionStatusChanged(sessionId, SessionStatus.Connected), new EntriesAppended(sessionId, 1),
-            new EntriesAppended(sessionId, 1),
-        ], changes);
+        var first = await SnapshotAsync(NewSnapshot(sessionId, lastSequence: 2, droppedCount: 2, count: 2));
+        Assert.Equal([new SessionAdded(sessionId), new EntriesAppended(sessionId, 1)], recorder.Changes);
+
+        await first.DisposeAsync();
+        await Wait.Until(() => recorder.Changes.Count == 3);
+        Assert.Equal(new SessionStatusChanged(sessionId, SessionStatus.Disconnected), recorder.Changes[^1]);
+
+        await using var second = await SnapshotAsync(NewSnapshot(sessionId, lastSequence: 7, count: 7));
+        Assert.Equal([new SessionStatusChanged(sessionId, SessionStatus.Connected), new EntriesAppended(sessionId, 1)], recorder.Changes.Skip(3));
+
+        await second.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 9, droppedCount: 2, count: 9), Ct);
+        Assert.Equal(new EntriesAppended(sessionId, 1), recorder.Changes[^1]);
+        Assert.Equal(6, recorder.Changes.Count);
     }
 }

@@ -80,8 +80,9 @@ public class ChangeNotificationTests
         var sessionId = Start();
 
         registry.ConnectionClosed("c1");
-        registry.SnapshotReceived("c2", NewSnapshot(sessionId));
+        Assert.Equal([new SessionStatusChanged(sessionId, SessionStatus.Disconnected)], changes);
 
+        registry.SnapshotReceived("c2", NewSnapshot(sessionId));
         Assert.Equal(
             [new SessionStatusChanged(sessionId, SessionStatus.Disconnected), new SessionStatusChanged(sessionId, SessionStatus.Connected)],
             changes);
@@ -93,9 +94,12 @@ public class ChangeNotificationTests
         var sessionId = Start("old");
 
         registry.SnapshotReceived("new", NewSnapshot(sessionId));
-        registry.ActionsReceived("old", Increments(sessionId, 1, 2));
-        registry.ConnectionClosed("old");
+        Assert.Empty(changes);
 
+        registry.ActionsReceived("old", Increments(sessionId, 1, 2));
+        Assert.Empty(changes);
+
+        registry.ConnectionClosed("old");
         Assert.Empty(changes);
     }
 
@@ -184,34 +188,23 @@ public class HubChangeNotificationTests(Viewer viewer) : IClassFixture<Viewer>
     public async Task Snapshot_Actions_and_close_reach_subscribers()
     {
         var sessionId = Guid.NewGuid();
-        var changes = new ConcurrentQueue<SessionChange>();
-        void Record(SessionChange change)
-        {
-            if (change.SessionId == sessionId)
-                changes.Enqueue(change);
-        }
-        viewer.Registry.Changed += Record;
-        try
-        {
-            var connection = await viewer.ConnectAsync();
-            await connection.InvokeAsync("Snapshot", new Snapshot(
-                ProtocolVersion.Current, sessionId, "TestApp", Runtime.Server, DateTimeOffset.UtcNow, 0, 0,
-                [new FeatureState("Counter", "App.CounterState", """{"Count":0}""")]), Wait.Ct);
-            await connection.InvokeAsync("Actions", new[]
-            {
-                new ActionRecorded(sessionId, 1, DateTimeOffset.UtcNow, "App.IncrementAction", "{}",
-                    [new FeatureState("Counter", "App.CounterState", """{"Count":1}""")]),
-            }, Wait.Ct);
-            await connection.DisposeAsync();
+        using var recorder = new ChangeRecorder(viewer.Registry, sessionId);
+        var connection = await viewer.ConnectAsync();
 
-            await Wait.Until(() => changes.Count == 3);
-            Assert.Equal(
-                [new SessionAdded(sessionId), new EntriesAppended(sessionId, 1), new SessionStatusChanged(sessionId, SessionStatus.Disconnected)],
-                changes);
-        }
-        finally
+        await connection.InvokeAsync("Snapshot", new Snapshot(
+            ProtocolVersion.Current, sessionId, "TestApp", Runtime.Server, DateTimeOffset.UtcNow, 0, 0,
+            [new FeatureState("Counter", "App.CounterState", """{"Count":0}""")]), Wait.Ct);
+        Assert.Equal([new SessionAdded(sessionId)], recorder.Changes);
+
+        await connection.InvokeAsync("Actions", new[]
         {
-            viewer.Registry.Changed -= Record;
-        }
+            new ActionRecorded(sessionId, 1, DateTimeOffset.UtcNow, "App.IncrementAction", "{}",
+                [new FeatureState("Counter", "App.CounterState", """{"Count":1}""")]),
+        }, Wait.Ct);
+        Assert.Equal([new SessionAdded(sessionId), new EntriesAppended(sessionId, 1)], recorder.Changes);
+
+        await connection.DisposeAsync();
+        await Wait.Until(() => recorder.Changes.Count == 3);
+        Assert.Equal(new SessionStatusChanged(sessionId, SessionStatus.Disconnected), recorder.Changes[^1]);
     }
 }

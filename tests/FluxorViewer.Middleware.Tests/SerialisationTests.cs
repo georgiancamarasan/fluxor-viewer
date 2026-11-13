@@ -55,8 +55,8 @@ public class SerialisationTests
     public async Task A_Snapshot_with_a_Feature_that_fails_to_serialise_is_still_sent_and_the_Session_goes_on()
     {
         await using var harness = new Harness(types: Broken);
-        var (connection, snapshot) = await harness.StartConnected();
 
+        var (connection, snapshot) = await harness.StartConnected();
         Assert.Equal("Converter says no", Error(Assert.Single(snapshot.Features, f => f.Name == "Broken").StateJson));
         Assert.Equal("""{"Count":0}""", Assert.Single(snapshot.Features, f => f.Name == "Counter").StateJson);
 

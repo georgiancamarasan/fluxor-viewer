@@ -44,6 +44,7 @@ public class HistoryLimitPageTests : BunitContext
     {
         Snapshot();
         Dispatch(1, 2, 3);
+
         var page = Render<Home>();
         Assert.Null(Note(page));
 
@@ -94,6 +95,7 @@ public class HistoryLimitPageTests : BunitContext
     {
         Snapshot();
         Dispatch(1, 2, 3, 4);
+
         var page = Render<Home>();
         Assert.NotNull(Note(page));
 

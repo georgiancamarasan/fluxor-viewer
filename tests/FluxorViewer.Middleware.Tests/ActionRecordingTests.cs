@@ -91,15 +91,16 @@ public class ActionRecordingTests
         harness.Dispatcher.Dispatch(new IncrementAction());
         harness.Dispatcher.Dispatch(new IncrementAction());
 
+        // Buffered before the connect: StoreInitializedAction and 2 increments, sent after the Snapshot.
         harness.Viewer.ConnectGate.SetResult();
         var snapshot = Assert.IsType<Snapshot>(await connection.FirstMessage.WaitAsync(Wait.Timeout, Ct));
-        for (var i = 0; i < 3; i++)
-            harness.Dispatcher.Dispatch(new IncrementAction());
-        await Harness.ActionsSent(connection, 5);
-
-        // Buffered before the connect: StoreInitializedAction and 2 increments, sent after the Snapshot.
         Assert.Equal(0, snapshot.LastSequence);
         Assert.Equal(0, Count(Assert.Single(snapshot.Features, f => f.Name == "Counter")));
+
+        harness.Dispatcher.Dispatch(new IncrementAction());
+        harness.Dispatcher.Dispatch(new IncrementAction());
+        harness.Dispatcher.Dispatch(new IncrementAction());
+        await Harness.ActionsSent(connection, 5);
         Assert.IsType<Snapshot>(connection.Sent.First());
         Assert.Equal([1L, 2L, 3L, 4L, 5L, 6L], connection.Actions.Select(a => a.Sequence));
         Assert.Equal([1, 2, 3, 4, 5], connection.Actions.Skip(1).Select(a => Count(Assert.Single(a.ChangedFeatures))));

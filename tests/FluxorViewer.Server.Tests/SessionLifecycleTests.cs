@@ -87,9 +87,11 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
         await current.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 5), Ct);
 
         await old.InvokeAsync("Actions", new[] { Increment(sessionId, 4) }, Ct);
+        Assert.Empty(Session(sessionId).Actions);
+
+        // An ignored close has nothing to wait on, so the newer connection's next batch is the point to look from.
         await old.DisposeAsync();
         await current.InvokeAsync("Actions", new[] { Increment(sessionId, 6) }, Ct);
-
         var session = Session(sessionId);
         Assert.Equal(SessionStatus.Connected, session.Status);
         Assert.Equal(current.ConnectionId, session.ConnectionId);
@@ -113,6 +115,7 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
 
         await using var again = await viewer.ConnectAsync();
         await again.InvokeAsync("Snapshot", NewSnapshot(sessionId, lastSequence: 1), Ct);
+
         var session = Session(sessionId);
         Assert.Empty(session.History);
         Assert.Equal(1, session.LastSequence);

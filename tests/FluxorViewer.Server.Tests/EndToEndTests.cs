@@ -22,16 +22,15 @@ public class EndToEndTests(Viewer viewer) : IClassFixture<Viewer>
             }));
         var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IStore>().InitializeAsync();
-
         await Wait.Until(() => viewer.Registry.GetSessions().Any(s => s.AppName == "EndToEnd"));
+        var sessionId = viewer.Registry.GetSessions().Single(s => s.AppName == "EndToEnd").SessionId;
         var dispatcher = provider.GetRequiredService<IDispatcher>();
+
         dispatcher.Dispatch(new IncrementAction());
         dispatcher.Dispatch(new IncrementAction());
 
-        var sessionId = viewer.Registry.GetSessions().Single(s => s.AppName == "EndToEnd").SessionId;
         await Wait.Until(() => viewer.Registry.Find(sessionId)!.Actions.Count(a => a.ActionType.EndsWith("IncrementAction")) == 2);
         var session = viewer.Registry.Find(sessionId)!;
-
         Assert.Equal(Runtime.Server, session.Runtime);
         var counter = Assert.Single(session.Actions.First().Before.Values);
         Assert.Equal("Counter", counter.Name);
@@ -41,7 +40,6 @@ public class EndToEndTests(Viewer viewer) : IClassFixture<Viewer>
         Assert.Equal(increments[0].Sequence + 1, increments[1].Sequence);
 
         await provider.DisposeAsync();
-
         await Wait.Until(() => viewer.Registry.Find(sessionId)!.ConnectionId is null);
     }
 
@@ -67,13 +65,13 @@ public class EndToEndTests(Viewer viewer) : IClassFixture<Viewer>
         dispatcher.Dispatch(new IncrementAction());
         await Wait.Until(() => first.Registry.Find(sessionId)!.Actions.Any(a => a.ActionType == typeof(IncrementAction).FullName));
 
+        // Nothing is dispatched meanwhile: only the closed connection tells the idle middleware to reconnect.
         await first.DisposeAsync();
         await using var second = new Viewer(port);
-        // Nothing is dispatched meanwhile: only the closed connection tells the idle middleware to reconnect.
         await Wait.Until(() => second.Registry.Find(sessionId) is { ConnectionId: not null });
+
         dispatcher.Dispatch(new IncrementAction());
         await Wait.Until(() => second.Registry.Find(sessionId)!.Actions.Any(a => a.ActionType == typeof(IncrementAction).FullName));
-
         var increment = Assert.Single(second.Registry.Find(sessionId)!.Actions);
         Assert.Equal(1, Count(increment.Before["Counter"].StateJson));
         Assert.Equal(2, Count(increment.After["Counter"].StateJson));

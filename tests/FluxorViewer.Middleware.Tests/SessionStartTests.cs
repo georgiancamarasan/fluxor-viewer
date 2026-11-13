@@ -132,13 +132,13 @@ public class SessionStartTests
         var logs = new CapturingLoggerFactory();
         var viewer = new FakeViewer { ConnectFailure = new HttpRequestException("Connection refused") };
         await using var provider = Provider(viewer, logs);
+
         await StartStore(provider);
         var connection = await viewer.FirstConnection.WaitAsync(Timeout, Ct);
-
         await Wait.Until(() => logs.Entries.Any(e => e.Exception is HttpRequestException));
-
         Assert.Empty(connection.Sent);
         Assert.Equal(LogLevel.Debug, logs.Entries.Single(e => e.Exception is HttpRequestException).Level);
+
         provider.GetRequiredService<IDispatcher>().Dispatch(new IncrementAction());
         Assert.Equal(1, provider.GetRequiredService<IState<CounterState>>().Value.Count);
     }

@@ -80,11 +80,11 @@ public class ResyncPageTests : BunitContext
         Dispatch(2, "App.First");
         Snapshot(1, count: 1);
         Dispatch(2, "App.Again");
+
         var page = Render<Home>();
-
         Assert.Equal(["Increment", "First", "⚠ resync", "Again"], RowTexts(page));
-        page.FindAll("[data-test=action-row]")[1].Click();
 
+        page.FindAll("[data-test=action-row]")[1].Click();
         Assert.Equal("true", page.FindAll("[data-test=action-row]")[1].GetAttribute("aria-selected"));
         Assert.Equal("false", page.FindAll("[data-test=action-row]")[2].GetAttribute("aria-selected"));
         Assert.Contains("First", page.Find("[data-test=state-header]").TextContent);

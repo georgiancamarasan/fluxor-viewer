@@ -27,22 +27,26 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         [new FeatureState("Counter", "App.CounterState", $$"""{"Count":{{sequence}}}""")]);
 
     [Fact]
-    public async Task A_Snapshot_and_three_Actions_reach_the_registry()
+    public async Task A_Snapshot_and_then_batches_of_Actions_reach_the_registry()
     {
         await using var connection = await viewer.ConnectAsync();
         var snapshot = NewSnapshot();
 
         await connection.InvokeAsync("Snapshot", snapshot, Ct);
-        await connection.InvokeAsync("Actions", new[] { NewAction(snapshot.SessionId, 1), NewAction(snapshot.SessionId, 2) }, Ct);
-        await connection.InvokeAsync("Actions", new[] { NewAction(snapshot.SessionId, 3) }, Ct);
-
         var session = viewer.Registry.Find(snapshot.SessionId);
         Assert.NotNull(session);
         Assert.Equal("TestApp", session.AppName);
         Assert.Equal(Runtime.WebAssembly, session.Runtime);
         Assert.Equal(connection.ConnectionId, session.ConnectionId);
-        Assert.Equal([1L, 2L, 3L], session.Actions.Select(a => a.Sequence));
+
+        await connection.InvokeAsync("Actions", new[] { NewAction(snapshot.SessionId, 1), NewAction(snapshot.SessionId, 2) }, Ct);
+        session = viewer.Registry.Find(snapshot.SessionId)!;
+        Assert.Equal([1L, 2L], session.Actions.Select(a => a.Sequence));
         Assert.Equal("""{"Count":0}""", session.Actions.First().Before["Counter"].StateJson);
+
+        await connection.InvokeAsync("Actions", new[] { NewAction(snapshot.SessionId, 3) }, Ct);
+        session = viewer.Registry.Find(snapshot.SessionId)!;
+        Assert.Equal([1L, 2L, 3L], session.Actions.Select(a => a.Sequence));
         Assert.Equal("""{"Count":3}""", session.Current["Counter"].StateJson);
     }
 
@@ -51,8 +55,8 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
     {
         await using var connection = await viewer.ConnectAsync();
         var sessionId = Guid.NewGuid();
-
         await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Ct);
+
         await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 40, DroppedCount = 12 }, Ct);
 
         Assert.Equal(40, viewer.Registry.Find(sessionId)!.LastSequence);
@@ -76,13 +80,16 @@ public class IngestHubTests(Viewer viewer) : IClassFixture<Viewer>
         var snapshot = NewSnapshot(version: new ProtocolVersion(ProtocolVersion.Current.Major + 1, 0));
 
         var first = await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", snapshot, Ct));
-        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", snapshot, Ct));
-        await using var retry = await viewer.ConnectAsync();
-        await Assert.ThrowsAsync<HubException>(() => retry.InvokeAsync("Snapshot", snapshot, Ct));
-
         Assert.Contains($"protocol version {snapshot.ProtocolVersion} is not compatible", first.Message);
         Assert.True(Rejection.IsRejection(first.Message)); // So the middleware stops rather than retrying.
         Assert.Null(viewer.Registry.Find(snapshot.SessionId));
+        Assert.Single(viewer.IngestLogs(LogLevel.Warning), l => l.Message.Contains(snapshot.SessionId.ToString()));
+
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("Snapshot", snapshot, Ct));
+        Assert.Single(viewer.IngestLogs(LogLevel.Warning), l => l.Message.Contains(snapshot.SessionId.ToString()));
+
+        await using var retry = await viewer.ConnectAsync();
+        await Assert.ThrowsAsync<HubException>(() => retry.InvokeAsync("Snapshot", snapshot, Ct));
         Assert.Single(viewer.IngestLogs(LogLevel.Warning), l => l.Message.Contains(snapshot.SessionId.ToString()));
     }
 
