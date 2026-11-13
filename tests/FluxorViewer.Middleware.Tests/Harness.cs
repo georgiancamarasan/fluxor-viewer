@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Fluxor;
 using FluxorViewer.Protocol;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,11 +12,13 @@ internal sealed class Harness : IAsyncDisposable
 {
     private readonly ServiceProvider provider;
 
-    /// <param name="viewer">The Viewer to report to; by default one whose connects wait for <see cref="FakeViewer.ConnectGate"/>.</param>
-    public Harness(int bufferSize = 1000, bool enabled = true, FakeViewer? viewer = null,
-        Type[]? types = null, Action<FluxorViewerOptions>? configure = null)
+    /// <param name="viewer">The Viewer to report to; by default one that isn't up yet (<see cref="FakeViewer.NotUpYet"/>).</param>
+    /// <param name="types">Features, reducers and effects to scan besides the shared Counter, Profile and Flaky ones.</param>
+    /// <param name="configure">Options beyond <c>Enabled</c>, such as a smaller <c>BufferSize</c>.</param>
+    /// <remarks>Three parameters, each optional and independent: a test names only the one it needs.</remarks>
+    public Harness(FakeViewer? viewer = null, Type[]? types = null, Action<FluxorViewerOptions>? configure = null)
     {
-        Viewer = viewer ?? new FakeViewer(connectImmediately: false);
+        Viewer = viewer ?? FakeViewer.NotUpYet();
         var services = new ServiceCollection();
         services.AddSingleton<IViewerConnectionFactory>(Viewer);
         services.AddSingleton<ILoggerFactory>(Logs);
@@ -25,8 +28,7 @@ internal sealed class Harness : IAsyncDisposable
                 typeof(GoEffects), typeof(FlakyFeature), .. types ?? []])
             .UseFluxorViewer(v =>
             {
-                v.Enabled = enabled;
-                v.BufferSize = bufferSize;
+                v.Enabled = true;
                 configure?.Invoke(v);
             }));
         provider = services.BuildServiceProvider();
@@ -39,20 +41,11 @@ internal sealed class Harness : IAsyncDisposable
     public FakeTimeProvider Time { get; } = new();
 
     /// <summary>
-    /// Moves time on in small steps, letting the sender run between them, until <paramref name="condition"/> holds;
+    /// Moves time on in 100 ms steps, letting the sender run between them, until <paramref name="condition"/> holds;
     /// for waiting out a backoff.
     /// </summary>
-    public async Task AdvanceUntil(Func<bool> condition, TimeSpan? step = null)
-    {
-        var deadline = DateTime.UtcNow + Wait.Timeout;
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-                throw new TimeoutException("Condition was not met in time.");
-            Time.Advance(step ?? TimeSpan.FromMilliseconds(100));
-            await Task.Delay(5, Wait.Ct);
-        }
-    }
+    public Task AdvanceUntil(Func<bool> condition, [CallerArgumentExpression(nameof(condition))] string description = "") =>
+        Wait.Until(condition, () => Time.Advance(TimeSpan.FromMilliseconds(100)), description);
 
     public IDispatcher Dispatcher => provider.GetRequiredService<IDispatcher>();
 

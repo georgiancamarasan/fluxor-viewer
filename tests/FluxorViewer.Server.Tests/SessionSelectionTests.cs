@@ -10,8 +10,8 @@ public class SessionSelectionTests
 {
     private readonly SessionSelection selection = new();
 
-    private static ReceivedSession Session(string appName = "MyApp", Runtime runtime = Runtime.WebAssembly, bool connected = true) => new(
-        Guid.NewGuid(), appName, runtime, DateTimeOffset.UtcNow, connected ? "c" : null, [], ImmutableDictionary<string, FeatureState>.Empty, 0);
+    private static ReceivedSession Session(string appName = "MyApp", Runtime runtime = Runtime.WebAssembly) => new(
+        Guid.NewGuid(), appName, runtime, DateTimeOffset.UtcNow, "c", [], ImmutableDictionary<string, FeatureState>.Empty, 0);
 
     private static ReceivedSession Disconnected(ReceivedSession session) => session with { ConnectionId = null };
 

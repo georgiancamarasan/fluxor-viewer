@@ -95,7 +95,7 @@ public class SessionStartTests
     [Fact]
     public async Task Initialize_does_not_wait_for_the_connection()
     {
-        var viewer = new FakeViewer(connectImmediately: false);
+        var viewer = FakeViewer.NotUpYet();
         await using var provider = Provider(viewer);
 
         await StartStore(provider).WaitAsync(Timeout, Ct);
@@ -107,7 +107,7 @@ public class SessionStartTests
     [Fact]
     public async Task The_first_Snapshot_is_of_the_state_before_any_Action_even_if_Actions_came_before_the_connect()
     {
-        var viewer = new FakeViewer(connectImmediately: false);
+        var viewer = FakeViewer.NotUpYet();
         await using var provider = Provider(viewer);
         await StartStore(provider);
         provider.GetRequiredService<IDispatcher>().Dispatch(new IncrementAction());
@@ -170,7 +170,7 @@ public class SessionStartTests
     [Fact]
     public async Task Disposing_the_store_cancels_a_pending_connect_and_closes_the_connection()
     {
-        var viewer = new FakeViewer(connectImmediately: false);
+        var viewer = FakeViewer.NotUpYet();
         var provider = Provider(viewer);
         var circuit = provider.CreateAsyncScope();
         await StartStore(circuit.ServiceProvider);

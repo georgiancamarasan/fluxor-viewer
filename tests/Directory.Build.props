@@ -12,5 +12,11 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="FluxorViewer.Tests" />
+  </ItemGroup>
+
+  <!-- Test support every test project shares. -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Shared\*.cs" LinkBase="Shared" />
   </ItemGroup>
 </Project>

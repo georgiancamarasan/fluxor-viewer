@@ -44,7 +44,7 @@ public class SendingTests
     [Fact]
     public async Task Overflow_drops_the_oldest_Actions_and_resyncs_from_the_state_before_the_rest()
     {
-        await using var harness = new Harness(bufferSize: 10);
+        await using var harness = new Harness(configure: v => v.BufferSize = 10);
         var (connection, first) = await harness.StartConnected();
         var gate = await StallSender(harness, connection); // Sequence 2 in flight.
 
@@ -70,7 +70,7 @@ public class SendingTests
     [Fact]
     public async Task Every_gap_the_Viewer_sees_between_Actions_is_covered_by_a_Snapshot_even_while_dropping_constantly()
     {
-        await using var harness = new Harness(bufferSize: 2);
+        await using var harness = new Harness(configure: v => v.BufferSize = 2);
         var (connection, _) = await harness.StartConnected();
 
         harness.DispatchIncrements(20_000); // 2..20001, racing the sender with a full buffer.
@@ -105,7 +105,7 @@ public class SendingTests
     [Fact]
     public async Task The_drop_count_resets_after_each_Snapshot()
     {
-        await using var harness = new Harness(bufferSize: 5);
+        await using var harness = new Harness(configure: v => v.BufferSize = 5);
         var (connection, _) = await harness.StartConnected();
 
         await Overflow(harness, connection);
@@ -153,9 +153,9 @@ public class SendingTests
     [Fact]
     public async Task Dispatching_never_waits_for_a_Viewer_that_is_not_answering()
     {
-        await using var connecting = new Harness(bufferSize: 100); // its connect waits on ConnectGate, never opened
+        await using var connecting = new Harness(configure: v => v.BufferSize = 100); // its connect waits on ConnectGate, never opened
         await connecting.Start();
-        await using var stalled = new Harness(bufferSize: 100);
+        await using var stalled = new Harness(configure: v => v.BufferSize = 100);
         await stalled.StartConnected();
         stalled.Viewer.ActionsGate = Stalled();
 

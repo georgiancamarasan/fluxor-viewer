@@ -78,7 +78,7 @@ public class UseFluxorViewerTests
     [Fact]
     public async Task By_default_1000_Actions_wait_for_the_Viewer_and_older_ones_are_dropped()
     {
-        var viewer = new FakeViewer(connectImmediately: false);
+        var viewer = FakeViewer.NotUpYet();
         await using var provider = Provider(viewer, v => v.Enabled = true);
         await provider.GetRequiredService<IStore>().InitializeAsync();
         DispatchIncrements(provider, 1000); // after StoreInitializedAction: one more than fits

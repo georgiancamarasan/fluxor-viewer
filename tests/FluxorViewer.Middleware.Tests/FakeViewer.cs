@@ -10,8 +10,8 @@ internal sealed class FakeViewer : IViewerConnectionFactory
     private readonly ConcurrentQueue<FakeConnection> connections = new();
     private readonly TaskCompletionSource<FakeConnection> firstConnection = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    /// <summary>Completes connects only when released; until then StartAsync waits.</summary>
-    public TaskCompletionSource ConnectGate { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    /// <summary>Completes connects only when released; until then StartAsync waits. Released from the start unless <see cref="NotUpYet"/>.</summary>
+    public TaskCompletionSource ConnectGate { get; private init; } = Released();
 
     /// <summary>When set, connecting throws this: the Viewer is down.</summary>
     public Exception? ConnectFailure { get; set; }
@@ -23,11 +23,11 @@ internal sealed class FakeViewer : IViewerConnectionFactory
     public Exception? ActionsFailure { get; set; }
 
     /// <summary>Sending Actions waits for this; replace it with an incomplete source to stall the sender.</summary>
-    public TaskCompletionSource ActionsGate { get; set; } = Completed();
+    public TaskCompletionSource ActionsGate { get; set; } = Released();
 
-    private static TaskCompletionSource Completed()
+    private static TaskCompletionSource Released()
     {
-        var gate = new TaskCompletionSource();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         gate.SetResult();
         return gate;
     }
@@ -43,11 +43,8 @@ internal sealed class FakeViewer : IViewerConnectionFactory
         return Assert.IsType<Snapshot>(await connection.FirstMessage.WaitAsync(Wait.Timeout, Wait.Ct));
     }
 
-    public FakeViewer(bool connectImmediately = true)
-    {
-        if (connectImmediately)
-            ConnectGate.SetResult();
-    }
+    /// <summary>A Viewer that isn't up yet: connects wait until a test releases <see cref="ConnectGate"/>.</summary>
+    public static FakeViewer NotUpYet() => new() { ConnectGate = new(TaskCreationOptions.RunContinuationsAsynchronously) };
 
     public IViewerConnection Create(Uri serverUrl)
     {

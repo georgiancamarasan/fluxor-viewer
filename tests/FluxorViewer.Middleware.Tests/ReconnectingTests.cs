@@ -10,7 +10,7 @@ public class ReconnectingTests
     [Fact]
     public async Task Actions_from_before_the_Viewer_is_up_arrive_after_a_Snapshot_of_the_state_before_them()
     {
-        await using var harness = new Harness(bufferSize: 10);
+        await using var harness = new Harness(configure: v => v.BufferSize = 10);
         var connection = await harness.Start(); // Viewer down: the connect waits.
 
         harness.DispatchIncrements(19); // StoreInitializedAction is 1, increments 2..20; 1..10 are dropped.
@@ -146,7 +146,7 @@ public class ReconnectingTests
     [Fact]
     public async Task Drops_reported_by_a_Snapshot_that_failed_to_send_are_reported_again()
     {
-        await using var harness = new Harness(bufferSize: 5);
+        await using var harness = new Harness(configure: v => v.BufferSize = 5);
         var connection = await harness.Start(); // Viewer down: the connect waits.
         harness.DispatchIncrements(10); // 1..11 into a buffer of 5: 1..6 dropped.
         harness.Viewer.SnapshotFailure = new HttpRequestException("Reset");

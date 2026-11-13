@@ -82,21 +82,3 @@ public sealed class Viewer : WebApplicationFactory<Program>
         }
     }
 }
-
-internal static class Wait
-{
-    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
-
-    public static CancellationToken Ct => TestContext.Current.CancellationToken;
-
-    public static async Task Until(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow + Timeout;
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-                throw new TimeoutException("Condition was not met in time.");
-            await Task.Delay(10, Ct);
-        }
-    }
-}
