@@ -1,3 +1,4 @@
+@* The Diff tab: what the selected Action changed in the selected Feature, rendered by jsondiffpatch in the browser. *@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 
@@ -70,6 +71,7 @@
     /// <summary>Whether unchanged values show; kept by the caller for the Viewer tab.</summary>
     [Parameter] public bool ShowUnchanged { get; set; }
 
+    /// <summary>The developer ticked or unticked Show unchanged.</summary>
     [Parameter] public EventCallback<bool> ShowUnchangedChanged { get; set; }
 
     private FeatureDiff? diff;

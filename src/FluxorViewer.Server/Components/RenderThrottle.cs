@@ -42,6 +42,7 @@ public sealed class RenderThrottle(TimeProvider time, TimeSpan interval, Action 
         render();
     }
 
+    /// <summary>Cancels a pending render; no render happens after this returns.</summary>
     public void Dispose()
     {
         lock (gate)

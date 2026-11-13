@@ -9,7 +9,9 @@ public readonly record struct ProtocolVersion(int Major, int Minor)
     /// <summary>The version this build of the protocol speaks.</summary>
     public static ProtocolVersion Current { get; } = new(1, 0);
 
+    /// <summary>Whether a peer speaking <paramref name="other"/> can talk to this one: the major versions match.</summary>
     public bool IsCompatibleWith(ProtocolVersion other) => Major == other.Major;
 
+    /// <summary>The version as <c>Major.Minor</c>, e.g. <c>1.0</c>.</summary>
     public override string ToString() => $"{Major}.{Minor}";
 }

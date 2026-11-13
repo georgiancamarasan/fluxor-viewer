@@ -1,3 +1,4 @@
+@* The State tab: the selected Feature's state after the selected Action, or its current state. *@
 @if (Feature is not null && (Entry?.After ?? Current).GetValueOrDefault(Feature) is { } state)
 {
     <div class="flex min-h-0 flex-col" data-test="state">

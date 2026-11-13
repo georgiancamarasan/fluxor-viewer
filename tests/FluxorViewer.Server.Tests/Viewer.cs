@@ -14,6 +14,7 @@ namespace FluxorViewer.Server.Tests;
 /// <summary>The real Viewer on real Kestrel (a free port), so tests use the same WebSocket path as the middleware.</summary>
 public sealed class Viewer : WebApplicationFactory<Program>
 {
+    /// <summary>A Viewer on a free port.</summary>
     public Viewer() : this(0)
     {
     }
@@ -38,12 +39,16 @@ public sealed class Viewer : WebApplicationFactory<Program>
 
     private readonly IReadOnlyDictionary<string, string?> settings;
 
+    /// <summary>Where the Viewer listens, as a Host app's <c>ServerUrl</c> would give it.</summary>
     public Uri BaseAddress { get; }
 
+    /// <summary>The ingest hub's address on this Viewer.</summary>
     public Uri HubUrl => new(BaseAddress, IngestHub.Path);
 
+    /// <summary>The Viewer's Session registry, as the UI injects it.</summary>
     public SessionRegistry Registry => Services.GetRequiredService<SessionRegistry>();
 
+    /// <summary>Everything the Viewer logged, Debug and up, in order.</summary>
     public ConcurrentQueue<(LogLevel Level, string Category, string Message)> Logs { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -55,6 +60,7 @@ public sealed class Viewer : WebApplicationFactory<Program>
             .AddFilter<CapturingProvider>(null, LogLevel.Debug)); // appsettings.json would otherwise hide Debug.
     }
 
+    /// <summary>Opens a SignalR connection to the ingest hub, as the middleware would.</summary>
     public async Task<HubConnection> ConnectAsync()
     {
         var connection = new HubConnectionBuilder().WithUrl(HubUrl).Build();
@@ -62,13 +68,16 @@ public sealed class Viewer : WebApplicationFactory<Program>
         return connection;
     }
 
+    /// <summary>What the ingest hub logged about rejections, at <paramref name="level"/>.</summary>
     public IEnumerable<(LogLevel Level, string Message)> IngestLogs(LogLevel level) =>
         Logs.Where(l => l.Category == typeof(IngestRejections).FullName && l.Level == level).Select(l => (l.Level, l.Message));
 
     private sealed class CapturingProvider(ConcurrentQueue<(LogLevel, string, string)> logs) : ILoggerProvider
     {
+        /// <inheritdoc />
         public ILogger CreateLogger(string categoryName) => new Logger(logs, categoryName);
 
+        /// <inheritdoc />
         public void Dispose() { }
 
         private sealed class Logger(ConcurrentQueue<(LogLevel, string, string)> logs, string category) : ILogger

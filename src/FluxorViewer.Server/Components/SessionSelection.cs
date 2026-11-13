@@ -13,6 +13,7 @@ public sealed class SessionSelection
 {
     private HashSet<Guid> known = [];
 
+    /// <summary>The Session to show; null while the developer has yet to pick among several.</summary>
     public Guid? Selected { get; private set; }
 
     /// <summary>The developer picked a Session.</summary>

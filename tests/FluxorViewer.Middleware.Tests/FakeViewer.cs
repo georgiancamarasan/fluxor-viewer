@@ -32,8 +32,10 @@ internal sealed class FakeViewer : IViewerConnectionFactory
         return gate;
     }
 
+    /// <summary>Every connection the middleware opened, oldest first: one per attempt.</summary>
     public IReadOnlyCollection<FakeConnection> Connections => connections;
 
+    /// <summary>Completes with the first connection the middleware opens.</summary>
     public Task<FakeConnection> FirstConnection => firstConnection.Task;
 
     /// <summary>Waits for the first connection's first message, which must be a Snapshot.</summary>
@@ -46,6 +48,7 @@ internal sealed class FakeViewer : IViewerConnectionFactory
     /// <summary>A Viewer that isn't up yet: connects wait until a test releases <see cref="ConnectGate"/>.</summary>
     public static FakeViewer NotUpYet() => new() { ConnectGate = new(TaskCreationOptions.RunContinuationsAsynchronously) };
 
+    /// <inheritdoc />
     public IViewerConnection Create(Uri serverUrl)
     {
         var connection = new FakeConnection(this, serverUrl);
@@ -54,27 +57,35 @@ internal sealed class FakeViewer : IViewerConnectionFactory
         return connection;
     }
 
+    /// <summary>One connection attempt: records what was sent on it and fails as the <see cref="FakeViewer"/> is set to.</summary>
     internal sealed class FakeConnection(FakeViewer viewer, Uri serverUrl) : IViewerConnection
     {
         private readonly TaskCompletionSource<object> firstMessage = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource disposed = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        /// <inheritdoc />
         public Task Closed => closed.Task;
 
         /// <summary>The connection closes from the Viewer's side, as when the Viewer stops.</summary>
         public void Close() => closed.TrySetResult();
 
+        /// <summary>The Viewer address the middleware connected to.</summary>
         public Uri ServerUrl { get; } = serverUrl;
 
+        /// <summary>Every Snapshot and Action sent, in order.</summary>
         public ConcurrentQueue<object> Sent { get; } = new();
 
+        /// <summary>The token the connect was started with, to check the middleware cancels it.</summary>
         public CancellationToken StartToken { get; private set; }
 
+        /// <summary>Completes with the first message sent.</summary>
         public Task<object> FirstMessage => firstMessage.Task;
 
+        /// <summary>Completes when the middleware disposes the connection, which ends that attempt.</summary>
         public Task Disposed => disposed.Task;
 
+        /// <inheritdoc />
         public async Task StartAsync(CancellationToken cancellationToken)
         {
             StartToken = cancellationToken;
@@ -83,6 +94,7 @@ internal sealed class FakeViewer : IViewerConnectionFactory
                 throw failure;
         }
 
+        /// <inheritdoc />
         public Task SendSnapshotAsync(Snapshot snapshot, CancellationToken cancellationToken)
         {
             if (viewer.SnapshotFailure is { } failure)
@@ -97,6 +109,7 @@ internal sealed class FakeViewer : IViewerConnectionFactory
         /// <summary>How many Actions sends have begun (including any waiting on <see cref="ActionsGate"/>).</summary>
         public int ActionSendsStarted => Volatile.Read(ref actionSendsStarted);
 
+        /// <inheritdoc />
         public async Task SendActionsAsync(IReadOnlyList<ActionRecorded> actions, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref actionSendsStarted);
@@ -108,10 +121,13 @@ internal sealed class FakeViewer : IViewerConnectionFactory
                 Sent.Enqueue(action);
         }
 
+        /// <summary>Each Actions batch sent, in order, as the middleware split them.</summary>
         public ConcurrentQueue<IReadOnlyList<ActionRecorded>> Batches { get; } = new();
 
+        /// <summary>Every Action sent, in order.</summary>
         public IReadOnlyList<ActionRecorded> Actions => Sent.OfType<ActionRecorded>().ToList();
 
+        /// <inheritdoc />
         public ValueTask DisposeAsync()
         {
             disposed.TrySetResult();
@@ -123,12 +139,16 @@ internal sealed class FakeViewer : IViewerConnectionFactory
 /// <summary>Captures log entries so tests can assert on them.</summary>
 internal sealed class CapturingLoggerFactory : ILoggerFactory
 {
+    /// <summary>Every entry logged, in order, at any level.</summary>
     public ConcurrentQueue<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = new();
 
+    /// <inheritdoc />
     public ILogger CreateLogger(string categoryName) => new Logger(this);
 
+    /// <inheritdoc />
     public void AddProvider(ILoggerProvider provider) { }
 
+    /// <inheritdoc />
     public void Dispose() { }
 
     private sealed class Logger(CapturingLoggerFactory factory) : ILogger

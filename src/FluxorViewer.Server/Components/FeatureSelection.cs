@@ -15,6 +15,7 @@ public sealed class FeatureSelection
     /// <summary>The selected Session's Feature names, alphabetically ignoring case.</summary>
     public IReadOnlyList<string> Features { get; private set; } = [];
 
+    /// <summary>The Feature to show; null when the selected Session has no Features or none is selected.</summary>
     public string? Selected { get; private set; }
 
     /// <summary>The developer picked a Feature.</summary>

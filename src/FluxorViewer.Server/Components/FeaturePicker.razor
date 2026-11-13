@@ -1,3 +1,4 @@
+@* The toolbar's Feature picker for the selected Session. *@
 <label class="flex items-center gap-2">
     <span class="toolbar-label">Feature</span>
     <select class="control" data-test="feature-picker" value="@Selected" @onchange="OnChange" disabled="@(Features.Count == 0)">
@@ -19,8 +20,10 @@
     /// <summary>Whether a Session is selected, which tells "no Features" apart from "nothing to show".</summary>
     [Parameter] public bool HasSession { get; set; }
 
+    /// <summary>The selected Feature's name, or null when there's none to select.</summary>
     [Parameter] public string? Selected { get; set; }
 
+    /// <summary>The developer picked a Feature, by name.</summary>
     [Parameter] public EventCallback<string> SelectedChanged { get; set; }
 
     private Task OnChange(ChangeEventArgs change) =>

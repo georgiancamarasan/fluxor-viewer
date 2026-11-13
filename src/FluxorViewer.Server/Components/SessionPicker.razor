@@ -1,3 +1,4 @@
+@* The toolbar's Session picker, newest first, with the selected Session's status dot. *@
 <label class="flex items-center gap-2">
     <span class="toolbar-label">Session</span>
     @if (Current is { } current)
@@ -24,8 +25,10 @@
     /// <summary>Every Session, in the order the Viewer first saw them.</summary>
     [Parameter, EditorRequired] public IReadOnlyList<ReceivedSession> Sessions { get; set; } = [];
 
+    /// <summary>The selected Session's id, or null while none is selected.</summary>
     [Parameter] public Guid? Selected { get; set; }
 
+    /// <summary>The developer picked a Session, by id.</summary>
     [Parameter] public EventCallback<Guid> SelectedChanged { get; set; }
 
     private ReceivedSession? Current => Sessions.FirstOrDefault(s => s.SessionId == Selected);

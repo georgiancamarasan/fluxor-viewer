@@ -1,3 +1,4 @@
+@* The selected Action's Payload above both tabs: one line, or a tree when expanded. *@
 <div class="border-b border-zinc-200 px-4 py-2 dark:border-zinc-800" data-test="payload">
     @if (error is not null)
     {
@@ -42,6 +43,7 @@
     /// <summary>Whether the Payload shows as a tree rather than one line; kept by the caller across Actions.</summary>
     [Parameter] public bool Expanded { get; set; }
 
+    /// <summary>The developer expanded or collapsed the Payload.</summary>
     [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
 
     /// <summary>The tree's expand/collapse choices for this Action type, kept by the caller.</summary>

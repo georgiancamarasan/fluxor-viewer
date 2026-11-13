@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 // In Fluxor's namespace so it shows up in AddFluxor(o => o.…) without an extra using.
 namespace Fluxor;
 
+/// <summary>Adds the Fluxor Viewer to a Fluxor store's options: <c>AddFluxor(o => o.UseFluxorViewer(…))</c>.</summary>
 public static class FluxorViewerFluxorOptionsExtensions
 {
     // Tracks calls per FluxorOptions; a disabled call registers nothing, so the service collection can't tell us.

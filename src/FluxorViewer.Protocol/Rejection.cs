@@ -10,10 +10,13 @@ namespace FluxorViewer.Protocol;
 /// </remarks>
 public static class Rejection
 {
+    /// <summary>What every rejection message starts with, before SignalR wraps it.</summary>
     public const string Prefix = "FluxorViewer: ";
 
+    /// <summary>The message the Viewer throws to reject something for <paramref name="reason"/>.</summary>
     public static string Message(string reason) => Prefix + reason;
 
+    /// <summary>Whether <paramref name="message"/>, as the client sees it, is a deliberate rejection by the Viewer.</summary>
     public static bool IsRejection(string? message) => message?.Contains(Prefix, StringComparison.Ordinal) == true;
 
     /// <summary>The Viewer's reason, without SignalR's wrapping; the whole message if it isn't a rejection.</summary>

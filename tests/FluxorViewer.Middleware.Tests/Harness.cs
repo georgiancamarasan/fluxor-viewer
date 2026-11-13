@@ -34,10 +34,13 @@ internal sealed class Harness : IAsyncDisposable
         provider = services.BuildServiceProvider();
     }
 
+    /// <summary>The Viewer the store reports to.</summary>
     public FakeViewer Viewer { get; }
 
+    /// <summary>What the middleware logged.</summary>
     public CapturingLoggerFactory Logs { get; } = new();
 
+    /// <summary>The middleware's clock, which moves only when a test advances it.</summary>
     public FakeTimeProvider Time { get; } = new();
 
     /// <summary>
@@ -47,6 +50,7 @@ internal sealed class Harness : IAsyncDisposable
     public Task AdvanceUntil(Func<bool> condition, [CallerArgumentExpression(nameof(condition))] string description = "") =>
         Wait.Until(condition, () => Time.Advance(TimeSpan.FromMilliseconds(100)), description);
 
+    /// <summary>The store's dispatcher.</summary>
     public IDispatcher Dispatcher => provider.GetRequiredService<IDispatcher>();
 
     /// <summary>Dispatches <paramref name="count"/> increments, one after another.</summary>
@@ -65,10 +69,13 @@ internal sealed class Harness : IAsyncDisposable
         return Math.Round((Time.GetUtcNow() - from).TotalSeconds);
     }
 
+    /// <summary>A service from the store's container, e.g. a Feature's <c>IState</c>.</summary>
     public T Get<T>() where T : notnull => provider.GetRequiredService<T>();
 
+    /// <summary>Initialises the store, which starts the Session; the connect may still be waiting.</summary>
     public Task InitializeAsync() => provider.GetRequiredService<IStore>().InitializeAsync();
 
+    /// <summary>Initialises the store and returns its first connection, without waiting for it to open.</summary>
     public async Task<FakeViewer.FakeConnection> Start()
     {
         await InitializeAsync();
@@ -98,5 +105,6 @@ internal sealed class Harness : IAsyncDisposable
     private static List<ActionRecorded> ActionsAfterStoreInitialized(FakeViewer.FakeConnection connection) =>
         connection.Actions.Where(a => a.ActionType != "Fluxor.StoreInitializedAction").ToList();
 
+    /// <summary>Disposes the store, which ends the Session and waits for its sender to stop.</summary>
     public ValueTask DisposeAsync() => provider.DisposeAsync();
 }

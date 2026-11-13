@@ -16,6 +16,12 @@ public sealed class IngestHub(ISessionRegistry registry, IngestRejections reject
 
     private const string BoundSessionKey = "FluxorViewer.SessionId";
 
+    /// <summary>
+    /// A Session starts reporting, or reports again after a reconnect or a Resync. Binds the connection to the
+    /// Session and passes the Snapshot to the registry.
+    /// </summary>
+    /// <exception cref="HubException">A rejection (<see cref="Rejection"/>): an incompatible protocol version, a malformed
+    /// Snapshot, or a different Session from the one this connection already reports.</exception>
     public void Snapshot(Snapshot snapshot)
     {
         if (snapshot is null)
@@ -46,6 +52,9 @@ public sealed class IngestHub(ISessionRegistry registry, IngestRejections reject
         registry.SnapshotReceived(Context.ConnectionId, snapshot);
     }
 
+    /// <summary>A batch of Actions from the Session this connection reports, passed to the registry as received.</summary>
+    /// <exception cref="HubException">A rejection (<see cref="Rejection"/>): no Snapshot yet, a malformed batch, or an
+    /// Action for another Session. The whole batch is refused.</exception>
     public void Actions(ActionRecorded[] actions)
     {
         if (BoundSession is not { } bound)
@@ -62,6 +71,7 @@ public sealed class IngestHub(ISessionRegistry registry, IngestRejections reject
         registry.ActionsReceived(Context.ConnectionId, actions);
     }
 
+    /// <summary>Tells the registry the connection closed, which disconnects the Session if this connection still reports it.</summary>
     public override Task OnDisconnectedAsync(Exception? exception)
     {
         registry.ConnectionClosed(Context.ConnectionId);
@@ -95,12 +105,14 @@ public sealed class IngestRejections(ILogger<IngestRejections> logger)
 
     private readonly ConcurrentDictionary<Guid, byte> versionMismatches = new();
 
+    /// <summary>Logs a Session's incompatible protocol version at Warning, the first time only.</summary>
     public void VersionMismatch(Guid sessionId, string? appName, string message)
     {
         if (versionMismatches.TryAdd(sessionId, 0))
             logger.LogWarning("Rejected Session {SessionId} ({AppName}): {Reason}", sessionId, appName, message);
     }
 
+    /// <summary>Logs a rejected message: at Warning the first time on a connection, at Debug after that.</summary>
     public void Rejected(HubCallerContext context, string reason)
     {
         var level = context.Items.TryAdd(WarnedKey, true) ? LogLevel.Warning : LogLevel.Debug;
