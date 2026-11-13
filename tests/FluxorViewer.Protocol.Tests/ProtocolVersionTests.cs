@@ -1,5 +1,6 @@
 namespace FluxorViewer.Protocol.Tests;
 
+// IN-1: the Viewer accepts any minor version of its own major protocol version and rejects other majors.
 public class ProtocolVersionTests
 {
     [Theory]

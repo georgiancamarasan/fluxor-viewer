@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace FluxorViewer.Middleware.Tests;
 
+// MW-1: UseFluxorViewer registers the middleware with its options, and only when enabled.
 public class UseFluxorViewerTests
 {
     private static readonly System.Reflection.Assembly MiddlewareAssembly = typeof(FluxorViewerOptions).Assembly;

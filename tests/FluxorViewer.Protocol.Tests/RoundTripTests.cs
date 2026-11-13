@@ -2,7 +2,8 @@ using System.Text.Json;
 
 namespace FluxorViewer.Protocol.Tests;
 
-// SignalR's JSON hub protocol serialises with JsonSerializerDefaults.Web.
+// IN-1: every protocol message survives the trip through SignalR's JSON hub protocol, which serialises with
+// JsonSerializerDefaults.Web.
 public class RoundTripTests
 {
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);

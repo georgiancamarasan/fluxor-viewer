@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace FluxorViewer.Server.Tests;
 
-// Proves the Viewer host boots under WebApplicationFactory; ingest hub tests build on this.
+// PK-1: proves the Viewer host boots under WebApplicationFactory; ingest hub tests build on this.
 public class ServerSmokeTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     [Fact]

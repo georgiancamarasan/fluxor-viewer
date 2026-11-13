@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace FluxorViewer.Middleware.Tests;
 
-// Proves the test harness can host a real Fluxor store; middleware tests build on this.
+// PK-1: proves the test harness can host a real Fluxor store; middleware tests build on this.
 public class FluxorStoreSmokeTests
 {
     [Fact]
