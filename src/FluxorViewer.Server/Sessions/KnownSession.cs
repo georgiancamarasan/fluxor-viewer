@@ -75,8 +75,16 @@ internal sealed class KnownSession(Snapshot firstSnapshot, long seenOrder, Histo
         return true;
     }
 
+    /// <summary>When the Session last disconnected, as a position among the registry's disconnects; lower is longer ago.</summary>
+    public long DisconnectOrder { get; private set; }
+
     /// <summary>The Session's connection closed; it may reconnect.</summary>
-    public void Disconnect() => ConnectionId = null;
+    /// <param name="disconnectOrder">This disconnect's position among the registry's disconnects.</param>
+    public void Disconnect(long disconnectOrder)
+    {
+        ConnectionId = null;
+        DisconnectOrder = disconnectOrder;
+    }
 
     /// <summary>Empties the History; the current Feature states and last Sequence stay as the new starting point.</summary>
     public void ClearHistory()

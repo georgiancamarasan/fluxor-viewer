@@ -18,3 +18,6 @@ public sealed record EntriesAppended(Guid SessionId, int Count) : SessionChange(
 
 /// <summary>The Session was cleared. If it was disconnected it's gone; otherwise its History is empty and it goes on recording.</summary>
 public sealed record SessionCleared(Guid SessionId) : SessionChange(SessionId);
+
+/// <summary>The Viewer forgot this disconnected Session to stay within its Disconnected Session limit; it's gone.</summary>
+public sealed record SessionForgotten(Guid SessionId) : SessionChange(SessionId);

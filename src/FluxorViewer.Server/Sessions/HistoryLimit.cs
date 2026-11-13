@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 
 namespace FluxorViewer.Server.Sessions;
 
@@ -17,16 +16,8 @@ public sealed record HistoryLimit(int Value)
     public static bool TryFrom(
         IConfiguration configuration, [NotNullWhen(true)] out HistoryLimit? limit, [NotNullWhen(false)] out string? error)
     {
-        var value = configuration[Key];
-        (limit, error) = value switch
-        {
-            null => (Default, null),
-            _ when int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var n) && n >= 1 => (new HistoryLimit(n), null),
-            // Digits only, so a whole number; it failed to parse because it's too large.
-            _ when value.Length > 0 && value.All(char.IsAsciiDigit) && value.TrimStart('0').Length > 0 =>
-                ((HistoryLimit?)null, $"--history can be at most {int.MaxValue}, not \"{value}\"."),
-            _ => (null, $"--history must be a whole number of at least 1, not \"{value}\"."),
-        };
+        (var value, error) = WholeNumberSetting.Read(configuration, Key, minimum: 1);
+        limit = error is null ? value is { } n ? new HistoryLimit(n) : Default : null;
         return limit is not null;
     }
 }

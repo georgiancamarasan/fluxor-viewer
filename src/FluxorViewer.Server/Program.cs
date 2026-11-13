@@ -11,7 +11,12 @@ if (!HistoryLimit.TryFrom(builder.Configuration, out var historyLimit, out var h
     Console.Error.WriteLine(historyError);
     return 1;
 }
-builder.Services.AddSingleton(historyLimit);
+if (!DisconnectedSessionLimit.TryFrom(builder.Configuration, out var disconnectedLimit, out var disconnectedError))
+{
+    Console.Error.WriteLine(disconnectedError);
+    return 1;
+}
+builder.Services.AddSingleton(new SessionLimits(historyLimit, disconnectedLimit));
 builder.Services.AddSingleton<SessionRegistry>();
 builder.Services.AddSingleton<ISessionRegistry>(sp => sp.GetRequiredService<SessionRegistry>());
 builder.Services.AddSingleton<IngestRejections>();

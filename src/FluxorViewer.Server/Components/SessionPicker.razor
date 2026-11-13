@@ -1,4 +1,5 @@
 @* The toolbar's Session picker, newest first, with the selected Session's status dot. *@
+@using System.Globalization
 <label class="flex items-center gap-2">
     <span class="toolbar-label">Session</span>
     @if (Current is { } current)
@@ -18,6 +19,11 @@
         {
             <option value="@session.SessionId" data-test="session-option">@Label(session)</option>
         }
+        @* At the end, where the older Sessions would have been. *@
+        @if (ForgottenBeyond is { } limit)
+        {
+            <option disabled data-test="forgotten">Older disconnected Sessions forgotten · the Viewer keeps the last @limit.Value.ToString("#,0", CultureInfo.InvariantCulture)</option>
+        }
     </select>
 </label>
 
@@ -27,6 +33,9 @@
 
     /// <summary>The selected Session's id, or null while none is selected.</summary>
     [Parameter] public Guid? Selected { get; set; }
+
+    /// <summary>The Disconnected Session limit once the Viewer has forgotten a Session, to say so; null until then.</summary>
+    [Parameter] public DisconnectedSessionLimit? ForgottenBeyond { get; set; }
 
     /// <summary>The developer picked a Session, by id.</summary>
     [Parameter] public EventCallback<Guid> SelectedChanged { get; set; }

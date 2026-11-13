@@ -14,7 +14,7 @@ public class KeyboardNavigationPageTests : BunitContext
 {
     private static readonly Guid SessionId = Guid.NewGuid();
 
-    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, HistoryLimit.Default);
+    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, SessionLimits.Default);
 
     private readonly BunitJSModuleInterop scroll;
 

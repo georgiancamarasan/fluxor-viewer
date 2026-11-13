@@ -11,7 +11,7 @@ namespace FluxorViewer.Server.Tests;
 // UI-1 to UI-8: the layout shell, Session and Feature pickers, Action list, State and Diff tabs, payload strip and Clear, against a real registry.
 public class HomePageTests : BunitContext
 {
-    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, HistoryLimit.Default);
+    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, SessionLimits.Default);
 
     private readonly BunitJSModuleInterop scroll;
     private readonly BunitJSModuleInterop diff;

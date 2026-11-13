@@ -16,7 +16,7 @@ public class ResyncPageTests : BunitContext
     private static readonly DateTimeOffset Timestamp = new(2026, 11, 12, 10, 2, 3, 45, TimeSpan.Zero);
     private static readonly Guid SessionId = Guid.NewGuid();
 
-    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, new FakeTimeProvider(Timestamp), HistoryLimit.Default);
+    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, new FakeTimeProvider(Timestamp), SessionLimits.Default);
 
     private readonly BunitJSModuleInterop diff;
 

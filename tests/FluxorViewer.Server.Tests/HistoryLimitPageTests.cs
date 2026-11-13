@@ -14,7 +14,7 @@ public class HistoryLimitPageTests : BunitContext
 {
     private static readonly Guid SessionId = Guid.NewGuid();
 
-    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, new HistoryLimit(3));
+    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, SessionLimits.Default with { History = new HistoryLimit(3) });
 
     public HistoryLimitPageTests()
     {

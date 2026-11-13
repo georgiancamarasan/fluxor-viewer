@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using FluxorViewer.Protocol;
 using FluxorViewer.Server.Sessions;
 using Microsoft.AspNetCore.SignalR.Client;
@@ -60,7 +59,7 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
     [InlineData("", "--history must be a whole number of at least 1, not \"\".")]
     public async Task A_history_that_is_not_a_whole_number_of_at_least_1_stops_the_Viewer_with_one_line(string value, string message)
     {
-        var (exitCode, error) = await StartViewerProcessAsync("--history", value);
+        var (exitCode, error) = await ViewerProcess.StartAsync("--history", value);
 
         Assert.Equal(1, exitCode);
         Assert.Equal(message, error.Trim());
@@ -69,39 +68,10 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
     [Fact]
     public async Task A_history_too_large_to_hold_says_so()
     {
-        var (exitCode, error) = await StartViewerProcessAsync("--history", "99999999999");
+        var (exitCode, error) = await ViewerProcess.StartAsync("--history", "99999999999");
 
         Assert.Equal(1, exitCode);
         Assert.Equal("--history can be at most 2147483647, not \"99999999999\".", error.Trim());
-    }
-
-    /// <summary>Runs the real Viewer as <c>fluxor-viewer</c> would, for arguments that stop it before it listens.</summary>
-    private static async Task<(int ExitCode, string Error)> StartViewerProcessAsync(params string[] args)
-    {
-        var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
-        {
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-        };
-        start.ArgumentList.Add(typeof(Program).Assembly.Location);
-        foreach (var arg in args)
-            start.ArgumentList.Add(arg);
-
-        using var process = Process.Start(start)!;
-        var error = process.StandardError.ReadToEndAsync(Wait.CancellationToken);
-        var output = process.StandardOutput.ReadToEndAsync(Wait.CancellationToken);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Wait.CancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            throw new TimeoutException($"The Viewer didn't stop. Output: {await output}");
-        }
-        return (process.ExitCode, await error);
     }
 }
 
@@ -110,7 +80,7 @@ public class HistoryLimitRegistryTests
 {
     private static readonly Guid SessionId = Guid.NewGuid();
 
-    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, new HistoryLimit(3));
+    private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, SessionLimits.Default with { History = new HistoryLimit(3) });
 
     private void Snapshot(long lastSequence, long droppedCount = 0) =>
         registry.SnapshotReceived("c1", SnapshotAfter(SessionId, lastSequence) with { DroppedCount = droppedCount });
