@@ -20,6 +20,14 @@ _Avoid_: Live, online, active, dead
 The developer discarding a Session's history. A disconnected Session is removed; a connected Session keeps its current Feature states as the new starting point and goes on recording.
 _Avoid_: Reset, delete, purge
 
+**Forget**:
+The Viewer removing a disconnected Session by itself, the one that disconnected longest ago, to keep the number of disconnected Sessions within its limit; unlike Clear, the developer didn't ask. A forgotten Session that reconnects comes back as a new Session.
+_Avoid_: Evict, expire, prune, garbage-collect, delete, purge
+
+**Disconnected Session limit**:
+The most disconnected Sessions the Viewer keeps; when another Session disconnects past it, the Viewer forgets one. Connected Sessions don't count towards it and are never forgotten.
+_Avoid_: Session cap, max sessions, retention
+
 **Runtime**:
 Where a Session's store executes: on the server (in a Blazor Server circuit) or in the browser (WebAssembly).
 _Avoid_: Render mode, host, platform
