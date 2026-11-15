@@ -23,7 +23,8 @@ it only drops at the start of a batch, so with `--batch` above 1 it fires at the
 `auto-sample.mjs` checks `samples/AutoSample` against a running Viewer (MW-8): one Server Session on the first visit
 (none from prerendering), a WebAssembly Session after the reload, the Server one disconnected within 10 s, the Viewer's
 picker following it, and no console errors (e.g. CORS). Run it once per launch profile, since the `https` profile
-redirects http to https:
+redirects http to https. `--app <AppName>` checks another InteractiveAuto Host app instead, such as a fresh
+`dotnet new blazor --interactivity Auto` app set up by following the root README (PK-5):
 
 ```sh
 dotnet run --project src/FluxorViewer.Server                                      # the Viewer, on 5299

@@ -1,4 +1,7 @@
-// Usage: node auto-sample.mjs [<sample url>] [--viewer http://localhost:5299]
+// Usage: node auto-sample.mjs [<sample url>] [--viewer http://localhost:5299] [--app AutoSample]
+//
+// --app checks another InteractiveAuto Host app reporting under that AppName instead, e.g. the README walked through on a
+// fresh `dotnet new blazor --interactivity Auto` app (PK-5).
 //
 // Checks samples/AutoSample against a running Viewer (MW-8): the first visit makes exactly one connected
 // AutoSample · Server Session (none from prerendering); once WebAssembly has downloaded, a reload makes an
@@ -8,8 +11,9 @@ import { chromium } from "playwright";
 
 const args = process.argv.slice(2);
 const option = name => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
-const sampleUrl = args.find(a => !a.startsWith("--") && a !== option("--viewer")) ?? "http://localhost:5151";
+const sampleUrl = args.find(a => !a.startsWith("--") && a !== option("--viewer") && a !== option("--app")) ?? "http://localhost:5151";
 const viewerUrl = option("--viewer") ?? "http://localhost:5299";
+const appName = option("--app") ?? "AutoSample";
 
 const failures = [];
 const check = (ok, message) => {
@@ -56,7 +60,7 @@ try {
     console.log(`Sample ${sampleUrl}, Viewer ${viewerUrl}`);
     await sample.goto(sampleUrl, { waitUntil: "networkidle" });
     const server = await until(async () => (await newSessions()).find(s => s.connected && s.runtime === "Server"), 15_000);
-    check(server?.app === "AutoSample", `first visit: a connected AutoSample · Server Session (${server?.label ?? "none"})`);
+    check(server?.app === appName, `first visit: a connected ${appName} · Server Session (${server?.label ?? "none"})`);
     await new Promise(r => setTimeout(r, 2_000)); // Give a stray prerender Session time to show up.
     const first = await newSessions();
     check(first.length === 1, `first visit: exactly one new Session (${first.map(s => s.label).join(", ") || "none"})`);
@@ -68,7 +72,7 @@ try {
         await sample.reload({ waitUntil: "networkidle" });
 
         const webAssembly = await until(async () => (await newSessions()).find(s => s.connected && s.runtime === "WebAssembly"), 30_000);
-        check(webAssembly?.app === "AutoSample", `reload: a connected AutoSample · WebAssembly Session (${webAssembly?.label ?? "none"})`);
+        check(webAssembly?.app === appName, `reload: a connected ${appName} · WebAssembly Session (${webAssembly?.label ?? "none"})`);
         const serverGone = await until(async () => (await newSessions()).some(s => s.id === server.id && !s.connected), 10_000);
         check(serverGone, "reload: the Server Session shows disconnected within 10 s");
         const extra = (await newSessions()).filter(s => s.id !== server.id && s.id !== webAssembly?.id);

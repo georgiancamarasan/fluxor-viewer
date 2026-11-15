@@ -119,7 +119,7 @@ public class SessionStartTests
     }
 
     [Fact]
-    public async Task A_failed_connect_is_logged_at_debug_and_the_store_keeps_working()
+    public async Task A_failed_connect_is_logged_and_the_store_keeps_working()
     {
         var logs = new CapturingLoggerFactory();
         var viewer = new FakeViewer { ConnectFailure = new HttpRequestException("Connection refused") };
@@ -127,9 +127,9 @@ public class SessionStartTests
 
         await StartStore(provider);
         var connection = await viewer.FirstConnection.WaitAsync(Timeout, Wait.CancellationToken);
-        await Wait.Until(() => logs.Entries.Any(e => e.Exception is HttpRequestException));
+        // Its level is ConnectionWarningTests' concern: Warning only for the first failure to this ServerUrl in the process.
+        await Wait.Until(() => logs.Entries.Any(e => e.Message.Contains("http://localhost:6000")));
         Assert.Empty(connection.Sent);
-        Assert.Equal(LogLevel.Debug, logs.Entries.Single(e => e.Exception is HttpRequestException).Level);
 
         provider.GetRequiredService<IDispatcher>().Dispatch(new IncrementAction());
         Assert.Equal(1, provider.GetRequiredService<IState<CounterState>>().Value.Count);

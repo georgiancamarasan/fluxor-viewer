@@ -187,7 +187,7 @@ public class ReconnectingTests
         var viewer = new FakeViewer { ConnectFailure = new HttpRequestException("Refused") };
         var harness = new Harness(viewer: viewer);
         await harness.Start();
-        await Wait.Until(() => harness.Logs.Entries.Any(e => e.Exception is HttpRequestException));
+        await Wait.Until(() => harness.Logs.Entries.Any(e => e.Message.Contains("http://localhost:5299"))); // The failed connect.
 
         await harness.DisposeAsync().AsTask().WaitAsync(Wait.Timeout, Wait.CancellationToken); // returns once the sender has stopped
         viewer.ConnectFailure = null;

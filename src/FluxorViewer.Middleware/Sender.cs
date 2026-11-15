@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using FluxorViewer.Protocol;
 using Microsoft.AspNetCore.SignalR;
@@ -8,13 +9,17 @@ namespace FluxorViewer.Middleware;
 /// <summary>
 /// Sends a Session's buffered Actions to the Viewer, each connection starting with a Snapshot of the base. On any failure
 /// it waits out the backoff and starts over with a new connection, until the Session ends or the Viewer rejects it. Logs
-/// rejections and Actions it can't build at Warning, and lost connections at Debug.
+/// rejections, Actions it can't build and the first connection to a ServerUrl that won't open at Warning, and other
+/// failed or lost connections at Debug.
 /// </summary>
 internal sealed class Sender(ReporterContext context, SessionInfo session, ActionBuffer buffer)
 {
     /// <summary>Delays between connection attempts; the last repeats.</summary>
     internal static readonly TimeSpan[] Backoff =
         [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(10)];
+
+    // ServerUrls whose connection has failed to open in this process: only the first failure is a Warning (PK-5).
+    private static readonly ConcurrentDictionary<string, byte> WarnedServerUrls = new();
 
     private readonly ViewerJson json = new(context.Options, context.Logger);
 
@@ -33,9 +38,11 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
     private async Task<bool> RunConnectionAsync(CancellationToken cancellationToken)
     {
         var connection = context.Connections.Create(new Uri(context.Options.ServerUrl));
+        var opened = false;
         try
         {
             await connection.StartAsync(cancellationToken);
+            opened = true;
             buffer.Reconnected();
             return await SendAsync(connection, cancellationToken);
         }
@@ -49,6 +56,11 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
             // why. Any other HubException is an unexpected error in the Viewer, retried like a lost connection.
             StopRejected(Rejection.Reason(ex.Message));
             return false;
+        }
+        catch (Exception ex) when (!opened)
+        {
+            LogCouldNotConnect(ex);
+            return true;
         }
         catch (Exception ex)
         {
@@ -234,6 +246,24 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
     {
         buffer.Stop();
         context.Logger.LogWarning("FluxorViewer: the Viewer rejected Session {SessionId}: {Reason}", session.SessionId, reason);
+    }
+
+    /// <summary>
+    /// Logs a connection that wouldn't open: at Warning the first time for this ServerUrl in the process, so a developer
+    /// whose Session never shows up sees why without Debug logging; at Debug after that, like a lost connection.
+    /// </summary>
+    private void LogCouldNotConnect(Exception exception)
+    {
+        if (!WarnedServerUrls.TryAdd(context.Options.ServerUrl, 0))
+        {
+            LogLost(exception);
+            return;
+        }
+
+        context.Logger.LogWarning(
+            "FluxorViewer: couldn't connect to the Viewer at {ServerUrl} ({Reason}); retrying, and Actions are kept until it connects. " +
+            "Is fluxor-viewer running, and does ServerUrl match the URL it printed?",
+            context.Options.ServerUrl, exception.Message);
     }
 
     private void LogLost(Exception? exception) =>
