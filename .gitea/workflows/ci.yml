@@ -31,3 +31,7 @@ jobs:
       # PK-3: catch a broken package early. Nothing is published.
       - name: Pack
         run: tools/pack.sh
+
+      # PK-4: install the packed Viewer tool and check it serves its page and static files.
+      - name: Check the Viewer tool
+        run: tools/check-tool.sh

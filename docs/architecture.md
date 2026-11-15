@@ -179,6 +179,14 @@ Styling is Tailwind v4, utility classes in the markup with `@apply` only for rep
 
 `fluxor-viewer [--port 5299] [--history 1000] [--disconnected 10]` binds to `localhost` only and prints the URL. There's no authentication; it's a local development tool. `--history` is read as the configuration key `history` (`HistoryLimit`); a bad value stops the Viewer before it listens: it writes one line to stderr and exits with code 1. A value that isn't a whole number of at least 1 says `--history must be a whole number of at least 1, not "<value>".`, and one above 2147483647 says `--history can be at most 2147483647, not "<value>".` `--disconnected` (`disconnected`, `DisconnectedSessionLimit`) is read and checked the same way (`WholeNumberSetting`), except that 0 is allowed: "a whole number of at least 0".
 
+`--port` (`port`, `ViewerPort`) is from 1 to 65535 and says `--port must be a whole number from 1 to 65535, not "<value>".` otherwise; 0 (any free port) is refused, because the Host app's `ServerUrl` needs a port that stays the same between runs. The Viewer listens on `http://localhost:<port>`, set after configuration is read so `--urls` or `ASPNETCORE_URLS` can't widen it, and once listening prints `Fluxor Viewer: http://localhost:<port>` to stdout. A port that's taken stops it with one line to stderr, `Port <port> is already in use. Start the Viewer on another port with --port N, and point the Host app's ServerUrl at it.`, and exit code 1. `--help` or `-h` prints every option with its default (`Usage`) and exits with 0 without starting anything.
+
+The content root is the app's own directory, not the current one: an installed tool starts wherever the developer is, and `wwwroot` and `appsettings.json` sit beside the app.
+
+### Packaging (PK-4)
+
+`tools/pack.sh` packs the Viewer as the `fluxor-viewer` tool (package ID and command) into `artifacts/packages/`, with the same version as Middleware and Protocol. It's meant to be built from source on the developer's own machine and installed from that folder, so nothing is downloaded and run; the build uses the machine's configured NuGet and npm sources, and runs on Windows in Git Bash (`.gitattributes` keeps `*.sh` LF). `tools/check-tool.sh` installs the last packed tool into a temporary folder, runs `--help`, starts it and checks the page and the files it loads are served and not empty; CI runs it after packing. Publishing to nuget.org is PK-6.
+
 ## InteractiveAuto notes
 
 - Prerendering doesn't start the store (Fluxor's `StoreInitializer` initialises after first render), so no Session is created for prerender.
