@@ -27,3 +27,7 @@ jobs:
 
       - name: Test
         run: dotnet test --solution FluxorViewer.sln --no-build --configuration Release
+
+      # PK-3: catch a broken package early. Nothing is published.
+      - name: Pack
+        run: tools/pack.sh

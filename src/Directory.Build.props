@@ -1,0 +1,28 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!--
+    PK-3: local packages. tools/pack.sh gives every pack a fresh -dev.<UTC timestamp> suffix, so a Host app restoring
+    from the local feed never gets a stale copy from the NuGet cache. The stamp can't be computed here: MSBuild
+    evaluates each project more than once, so Middleware's dependency would name a Protocol version that was never packed.
+  -->
+  <PropertyGroup>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <PackageOutputPath>$([MSBuild]::NormalizeDirectory($(MSBuildThisFileDirectory), .., artifacts, packages))</PackageOutputPath>
+    <Authors>Georgian Camarasan</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- Embedded so a Host app can step into the middleware without a symbol server. -->
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <!-- CleanVersion=true (set by the clean option of tools/pack.sh) packs plain $(VersionPrefix) on purpose. -->
+  <Target Name="RequireVersionSuffix" BeforeTargets="GenerateNuspec"
+          Condition="'$(IsPackable)' == 'true' and '$(VersionSuffix)' == '' and '$(CleanVersion)' != 'true'">
+    <Error Text="Pack with tools/pack.sh, not dotnet pack: it stamps both packages with one -dev.&lt;timestamp&gt; suffix (or use tools/pack.sh --clean)." />
+  </Target>
+
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
+</Project>

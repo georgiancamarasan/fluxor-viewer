@@ -1,3 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <Description>Message contracts shared by the Fluxor Viewer middleware and the Viewer.</Description>
+  </PropertyGroup>
+
 </Project>

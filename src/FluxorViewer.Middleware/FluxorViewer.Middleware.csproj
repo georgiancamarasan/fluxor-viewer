@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <Description>Fluxor middleware that reports a store's Actions and Feature states to the Fluxor Viewer.</Description>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Fluxor" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
