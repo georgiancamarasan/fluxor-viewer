@@ -4,35 +4,31 @@ using System.Text;
 namespace FluxorViewer.Middleware;
 
 /// <summary>
-/// Receives serialised JSON, keeping it only while it's within <c>cap</c> bytes and just counting the rest, so a huge
-/// value is measured without being held in memory. A single write that might cross the cap (the writer asks for room
-/// for the worst case, e.g. a long string fully escaped) isn't kept either; <see cref="IsComplete"/> then says so.
+/// Receives serialised JSON, keeping it until more than <c>cap</c> bytes have been written and just counting the rest, so
+/// a huge value is measured without being held in memory. A single write that asks for more room than the cap has left
+/// (as one that writes a long string whole does) is still kept, so a value within the cap is always kept whole.
 /// </summary>
 internal sealed class CappedBuffer(int cap) : IBufferWriter<byte>
 {
     private byte[] kept = [];
     private int keptLength;
 
-    // What the writer writes into once it's no longer kept; reused, and thrown away.
+    // What the writer writes into once more than the cap has been written; reused, and thrown away.
     private byte[] scratch = [];
-    private bool discarding;
 
     /// <summary>Every byte written, kept or not.</summary>
     public long Length { get; private set; }
 
-    /// <summary>Whether more than the cap was written.</summary>
+    /// <summary>Whether more than the cap was written, so only part of it was kept.</summary>
     public bool IsOverCap => Length > cap;
 
-    /// <summary>Whether everything written was kept, so <see cref="Text"/> is the whole JSON.</summary>
-    public bool IsComplete => !discarding;
-
-    /// <summary>The JSON kept: all of it when <see cref="IsComplete"/>.</summary>
+    /// <summary>The JSON written, whole unless <see cref="IsOverCap"/>.</summary>
     public string Text => Encoding.UTF8.GetString(kept, 0, keptLength);
 
     /// <inheritdoc />
     public void Advance(int count)
     {
-        if (!discarding)
+        if (!IsOverCap)
             keptLength += count;
         Length += count;
     }
@@ -41,21 +37,21 @@ internal sealed class CappedBuffer(int cap) : IBufferWriter<byte>
     public Memory<byte> GetMemory(int sizeHint = 0)
     {
         var size = Math.Max(sizeHint, 1);
-        if (!discarding && keptLength + size <= cap)
-            return Keep(size);
-        discarding = true;
-        return Scratch(size);
+        return IsOverCap ? Scratch(size) : Keep(size);
     }
 
     /// <inheritdoc />
     public Span<byte> GetSpan(int sizeHint = 0) => GetMemory(sizeHint).Span;
 
-    /// <summary>Room for <paramref name="size"/> more kept bytes, growing the kept array by doubling but never past the cap.</summary>
+    /// <summary>
+    /// Room for <paramref name="size"/> more kept bytes, growing the kept array by doubling up to the cap, and past it only
+    /// as far as a single write asks.
+    /// </summary>
     private Memory<byte> Keep(int size)
     {
         var needed = keptLength + size;
         if (kept.Length < needed)
-            Array.Resize(ref kept, Math.Min(cap, Math.Max(needed, Math.Max(256, kept.Length * 2))));
+            Array.Resize(ref kept, Math.Max(needed, Math.Min(cap, Math.Max(256, kept.Length * 2))));
         return kept.AsMemory(keptLength);
     }
 

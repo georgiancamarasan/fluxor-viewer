@@ -25,6 +25,7 @@ internal sealed class ViewerJson(FluxorViewerOptions options, ILogger logger)
     {
         ReferenceHandler = ReferenceHandler.IgnoreCycles,
         MaxDepth = options.MaxDepth,
+        Converters = { new SegmentedStringConverter() },
     };
 
     /// <summary>The largest message, in bytes, the Viewer accepts.</summary>
@@ -50,10 +51,7 @@ internal sealed class ViewerJson(FluxorViewerOptions options, ILogger logger)
         try
         {
             var buffer = Write(value, type);
-            if (buffer.IsOverCap)
-                return OverMaxValueSize(subject, buffer.Length);
-            // A write that might have crossed the cap wasn't kept, but it didn't: within the cap, so write it again in full.
-            return buffer.IsComplete ? buffer.Text : JsonSerializer.Serialize(value, type, serializerOptions);
+            return buffer.IsOverCap ? OverMaxValueSize(subject, buffer.Length) : buffer.Text;
         }
         catch (Exception ex)
         {
