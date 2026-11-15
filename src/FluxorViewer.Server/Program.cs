@@ -35,7 +35,10 @@ builder.Services.AddCors(o => o.AddPolicy(IngestRules.CorsPolicy, p => p
 var app = builder.Build();
 
 app.UseCors();
-app.MapHub<IngestHub>(IngestHub.Path).RequireCors(IngestRules.CorsPolicy);
+// Buffer a whole message before pausing the connection. At the 64 KB default, the hub reads a large message 64 KB at a
+// time and re-scans everything buffered for its end after each read, so a 32 MB message took seconds, not milliseconds.
+app.MapHub<IngestHub>(IngestHub.Path, o => o.ApplicationMaxBufferSize = JsonLimits.MaxMessageSize)
+    .RequireCors(IngestRules.CorsPolicy);
 app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();

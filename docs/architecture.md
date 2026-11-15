@@ -101,7 +101,7 @@ ActionRecorded
   ChangedFeatures: [ { Name, StateType, StateJson } ]
 ```
 
-Hub methods on `/hub/ingest`: `Snapshot(Snapshot)` and `Actions(ActionRecorded[])`. One hub connection per Session: the first accepted Snapshot binds the connection to its `SessionId`, and later Snapshots and Actions on it must carry the same one. Rejections are `HubException`s and leave the connection open. CORS allows `localhost`, `127.0.0.1` and `[::1]` origins on any port so WebAssembly apps can connect. The maximum message size is 32 MB, `JsonLimits.MaxMessageSize`, shared so the middleware splits and shrinks against it (SignalR's default of 32 KB is too small for real Snapshots).
+Hub methods on `/hub/ingest`: `Snapshot(Snapshot)` and `Actions(ActionRecorded[])`. One hub connection per Session: the first accepted Snapshot binds the connection to its `SessionId`, and later Snapshots and Actions on it must carry the same one. Rejections are `HubException`s and leave the connection open. CORS allows `localhost`, `127.0.0.1` and `[::1]` origins on any port so WebAssembly apps can connect. The maximum message size is 32 MB, `JsonLimits.MaxMessageSize`, shared so the middleware splits and shrinks against it (SignalR's default of 32 KB is too small for real Snapshots). The hub also buffers up to that much from a connection before pausing it (`ApplicationMaxBufferSize`): at SignalR's 64 KB default, receiving a message near the limit took seconds, because the end of the message is searched for again over everything buffered after every 64 KB read.
 
 Why changed-Features-only plus Snapshots instead of full state every time: see [ADR 0002](adr/0002-changed-feature-deltas-with-snapshot-resync.md).
 
