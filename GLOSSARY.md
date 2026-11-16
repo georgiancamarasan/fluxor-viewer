@@ -17,7 +17,7 @@ Whether the Viewer currently has a connection for a Session: *connected* or *dis
 _Avoid_: Live, online, active, dead
 
 **Clear**:
-The developer discarding a Session's history. A disconnected Session is removed; a connected Session keeps its current Feature states as the new starting point and goes on recording.
+The developer discarding a Session's history. A disconnected Session is removed; a connected Session keeps its current Feature states as the new starting point and goes on recording. The developer can also Clear every disconnected Session at once, from every Host app, which leaves connected Sessions untouched.
 _Avoid_: Reset, delete, purge
 
 **Forget**:

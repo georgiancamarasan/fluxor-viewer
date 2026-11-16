@@ -1,0 +1,17 @@
+@* Clear disconnected, with its inline prompt: removes every disconnected Session, from every Host app, at once. *@
+@using System.Globalization
+
+<ClearPrompt Name="clear-disconnected" Label="Clear disconnected" Enabled="Disconnected > 0" Question="@Question" Confirmed="Cleared" />
+
+@code {
+    /// <summary>Every Session.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<ReceivedSession> Sessions { get; set; } = [];
+
+    /// <summary>The developer confirmed clearing every disconnected Session.</summary>
+    [Parameter] public EventCallback Cleared { get; set; }
+
+    private int Disconnected => Sessions.Count(s => s.Status == SessionStatus.Disconnected);
+
+    private string Question =>
+        $"Remove {Disconnected.ToString("N0", CultureInfo.InvariantCulture)} disconnected {(Disconnected == 1 ? "Session" : "Sessions")}?";
+}

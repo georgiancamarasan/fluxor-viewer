@@ -13,6 +13,7 @@
         <FeaturePicker Features="features.Features" HasSession="selection.Selected is not null"
                        Selected="@features.Selected" SelectedChanged="SelectFeature" />
         <ClearButton Session="SelectedSession" Cleared="Clear" />
+        <ClearDisconnectedButton Sessions="sessions" Cleared="ClearDisconnected" />
     </header>
 
     @if (sessions.Count == 0)
@@ -118,6 +119,13 @@
     private void Clear(Guid sessionId)
     {
         Registry.Clear(sessionId);
+        Refresh();
+    }
+
+    // Re-read at once, as for Clear.
+    private void ClearDisconnected()
+    {
+        Registry.ClearDisconnected();
         Refresh();
     }
 

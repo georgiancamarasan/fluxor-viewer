@@ -19,7 +19,8 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
     private bool hasForgotten;
 
     /// <summary>
-    /// Raised at most once per kind of change per call, after the change is made and outside the lock, synchronously on
+    /// Raised at most once per kind of change per call (except <see cref="ClearDisconnected"/>, once per Session it
+    /// removes), after the change is made and outside the lock, synchronously on
     /// the calling thread (a hub invocation or a Clear). Handlers must not block and must marshal to their own context
     /// (in Blazor, <c>InvokeAsync</c>). A handler that throws is logged and doesn't affect ingestion or other handlers.
     /// </summary>
@@ -118,6 +119,23 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
                 session.ClearHistory();
         }
         Raise(new SessionCleared(sessionId));
+    }
+
+    /// <summary>
+    /// Removes every Session that is disconnected now, from every Host app, raising <see cref="SessionCleared"/> for each;
+    /// connected Sessions are untouched. Whether the Viewer has forgotten a Session (<see cref="ForgottenBeyond"/>) stays as it was.
+    /// </summary>
+    public void ClearDisconnected()
+    {
+        List<Guid> removed;
+        lock (gate)
+        {
+            removed = [.. sessions.Values.Where(s => s.ConnectionId is null).Select(s => s.SessionId)];
+            foreach (var sessionId in removed)
+                sessions.Remove(sessionId);
+        }
+        foreach (var sessionId in removed)
+            Raise(new SessionCleared(sessionId));
     }
 
     /// <summary>A copy of every Session in the order the Viewer first saw them, safe to read while ingestion continues.</summary>
