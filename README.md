@@ -173,6 +173,8 @@ dotnet tool install fluxor-viewer --add-source /path/to/fluxor-viewer/artifacts/
 dotnet fluxor-viewer            # from this folder or one below it; options as above
 ```
 
+Pass options straight to `dotnet fluxor-viewer`, e.g. `dotnet fluxor-viewer --help`: `dotnet tool run fluxor-viewer --help` shows dotnet's own help instead of the Viewer's.
+
 **The install fails with NU1301.** NuGet also asks your other configured feeds for the package, and fails when one can't be reached, for example an Azure DevOps feed whose credentials expired. Add `--ignore-failed-sources` to install from the local folder alone.
 
 **Checking a build.** `tools/check-tool.sh` installs the last packed tool into a temporary folder, starts it, and checks that it serves its page.
