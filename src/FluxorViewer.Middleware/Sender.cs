@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using FluxorViewer.Protocol;
 using Microsoft.AspNetCore.SignalR;
@@ -9,7 +8,7 @@ namespace FluxorViewer.Middleware;
 /// <summary>
 /// Sends a Session's buffered Actions to the Viewer, each connection starting with a Snapshot of the base. On any failure
 /// it waits out the backoff and starts over with a new connection, until the Session ends or the Viewer rejects it. Logs
-/// rejections, Actions it can't build and the first connection to a ServerUrl that won't open at Warning, and other
+/// rejections, Actions it can't build and the first connection in the process that won't open at Warning, and other
 /// failed or lost connections at Debug.
 /// </summary>
 internal sealed class Sender(ReporterContext context, SessionInfo session, ActionBuffer buffer)
@@ -17,9 +16,6 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
     /// <summary>Delays between connection attempts; the last repeats.</summary>
     internal static readonly TimeSpan[] Backoff =
         [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(10)];
-
-    // ServerUrls whose connection has failed to open in this process: only the first failure is a Warning (PK-5).
-    private static readonly ConcurrentDictionary<string, byte> WarnedServerUrls = new();
 
     private readonly ViewerJson json = new(context.Options, context.Logger);
 
@@ -249,12 +245,12 @@ internal sealed class Sender(ReporterContext context, SessionInfo session, Actio
     }
 
     /// <summary>
-    /// Logs a connection that wouldn't open: at Warning the first time for this ServerUrl in the process, so a developer
+    /// Logs a connection that wouldn't open: at Warning the first time in the process, so a developer
     /// whose Session never shows up sees why without Debug logging; at Debug after that, like a lost connection.
     /// </summary>
     private void LogCouldNotConnect(Exception exception)
     {
-        if (!WarnedServerUrls.TryAdd(context.Options.ServerUrl, 0))
+        if (!context.ConnectionWarning.TryClaim())
         {
             LogLost(exception);
             return;

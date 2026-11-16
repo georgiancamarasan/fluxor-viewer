@@ -2,8 +2,9 @@ using Microsoft.Extensions.Logging;
 
 namespace FluxorViewer.Middleware.Tests;
 
-// PK-5: the first connection to a ServerUrl that can't be opened is logged at Warning, so a first run that shows nothing
-// in the Viewer says why; later failures, and connections lost after opening, stay at Debug.
+// PK-5: the first connection in the process that can't be opened is logged at Warning, so a first run that shows nothing
+// in the Viewer says why; later failures, from any Session, and connections lost after opening, stay at Debug.
+// Each harness is its own Host app process: the warning is shared by the Sessions in one container.
 public class ConnectionWarningTests
 {
     private static Harness Refused(string serverUrl, FakeViewer? viewer = null) =>
@@ -40,17 +41,30 @@ public class ConnectionWarningTests
     }
 
     [Fact]
-    public async Task Another_Session_reporting_to_the_same_ServerUrl_does_not_warn_again()
+    public async Task Another_Session_in_the_same_Host_app_does_not_warn_again()
     {
-        await using var first = Refused("http://localhost:6103");
-        await first.Start();
-        await Wait.Until(() => LevelsLoggedAbout(first, "http://localhost:6103").Length == 1);
+        await using var harness = Refused("http://localhost:6103");
+        await harness.Start();
+        await Wait.Until(() => LevelsLoggedAbout(harness, "http://localhost:6103").Length == 1);
 
-        await using var second = Refused("http://localhost:6103");
-        await second.Start();
-        await Wait.Until(() => LevelsLoggedAbout(second, "http://localhost:6103").Length == 1);
+        await harness.StartAnotherSession();
+        await Wait.Until(() => LevelsLoggedAbout(harness, "http://localhost:6103").Length == 2);
 
-        Assert.Equal([LogLevel.Debug], LevelsLoggedAbout(second, "http://localhost:6103"));
+        Assert.Equal([LogLevel.Warning, LogLevel.Debug], LevelsLoggedAbout(harness, "http://localhost:6103"));
+    }
+
+    [Fact]
+    public async Task Each_Host_app_process_warns_once_whatever_other_apps_did()
+    {
+        await using var earlier = Refused("http://localhost:6105");
+        await earlier.Start();
+        await Wait.Until(() => LevelsLoggedAbout(earlier, "http://localhost:6105").Length == 1);
+
+        await using var later = Refused("http://localhost:6105");
+        await later.Start();
+        await Wait.Until(() => LevelsLoggedAbout(later, "http://localhost:6105").Length == 1);
+
+        Assert.Equal([LogLevel.Warning], LevelsLoggedAbout(later, "http://localhost:6105"));
     }
 
     [Fact]

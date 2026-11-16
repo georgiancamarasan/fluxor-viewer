@@ -127,7 +127,7 @@ public class SessionStartTests
 
         await StartStore(provider);
         var connection = await viewer.FirstConnection.WaitAsync(Timeout, Wait.CancellationToken);
-        // Its level is ConnectionWarningTests' concern: Warning only for the first failure to this ServerUrl in the process.
+        // Its level is ConnectionWarningTests' concern: Warning only for the first failure in the process.
         await Wait.Until(() => logs.Entries.Any(e => e.Message.Contains("http://localhost:6000")));
         Assert.Empty(connection.Sent);
 

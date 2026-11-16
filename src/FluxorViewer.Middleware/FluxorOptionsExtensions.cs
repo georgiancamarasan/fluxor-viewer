@@ -34,6 +34,7 @@ public static class FluxorViewerFluxorOptionsExtensions
         viewerOptions.Validate();
         options.Services.AddSingleton(viewerOptions);
         options.Services.TryAddSingleton<IViewerConnectionFactory, SignalRViewerConnectionFactory>();
+        options.Services.TryAddSingleton<ConnectionWarning>();
         return options.AddMiddleware<FluxorViewerMiddleware>();
     }
 }

@@ -75,6 +75,12 @@ internal sealed class Harness : IAsyncDisposable
     /// <summary>Initialises the store, which starts the Session; the connect may still be waiting.</summary>
     public Task InitializeAsync() => provider.GetRequiredService<IStore>().InitializeAsync();
 
+    /// <summary>
+    /// Starts a second Session in the same Host app, as a second Blazor circuit would: its own store in a new scope of the
+    /// same container. Disposing the harness ends it too.
+    /// </summary>
+    public Task StartAnotherSession() => provider.CreateScope().ServiceProvider.GetRequiredService<IStore>().InitializeAsync();
+
     /// <summary>Initialises the store and returns its first connection, without waiting for it to open.</summary>
     public async Task<FakeViewer.FakeConnection> Start()
     {

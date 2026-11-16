@@ -9,6 +9,7 @@ namespace FluxorViewer.Middleware;
 internal sealed class FluxorViewerMiddleware(
     FluxorViewerOptions options,
     IViewerConnectionFactory connectionFactory,
+    ConnectionWarning connectionWarning,
     ILoggerFactory? loggerFactory = null,
     TimeProvider? time = null)
     : Fluxor.Middleware, IAsyncDisposable, IDisposable
@@ -16,6 +17,7 @@ internal sealed class FluxorViewerMiddleware(
     internal SessionReporter Reporter { get; } = new(new ReporterContext(
         options,
         connectionFactory,
+        connectionWarning,
         (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<FluxorViewerMiddleware>(),
         time ?? TimeProvider.System));
 

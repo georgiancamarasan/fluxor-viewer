@@ -98,6 +98,10 @@ internal sealed class SessionReporter(ReporterContext context) : IAsyncDisposabl
         context.Time.GetUtcNow());
 }
 
-/// <summary>What a Session's reporting needs from the Host app: its options, how to connect, where to log, and the time.</summary>
+/// <summary>
+/// What a Session's reporting needs from the Host app: its options, how to connect, whether it has warned about a
+/// connection that wouldn't open, where to log, and the time.
+/// </summary>
 internal sealed record ReporterContext(
-    FluxorViewerOptions Options, IViewerConnectionFactory Connections, ILogger Logger, TimeProvider Time);
+    FluxorViewerOptions Options, IViewerConnectionFactory Connections, ConnectionWarning ConnectionWarning, ILogger Logger,
+    TimeProvider Time);
