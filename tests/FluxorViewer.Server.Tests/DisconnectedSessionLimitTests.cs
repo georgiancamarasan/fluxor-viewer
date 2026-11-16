@@ -59,7 +59,7 @@ public class DisconnectedSessionLimitTests
     [InlineData("", "--disconnected must be a whole number of at least 0, not \"\".")]
     public async Task A_disconnected_value_that_is_not_a_whole_number_of_at_least_0_stops_the_Viewer_with_one_line(string value, string message)
     {
-        var (exitCode, _, error) = await ViewerProcess.StartAsync("--disconnected", value);
+        var (exitCode, _, error) = await ViewerProcess.RunAsync("--disconnected", value);
 
         Assert.Equal(1, exitCode);
         Assert.Equal(message, error.Trim());
@@ -68,7 +68,7 @@ public class DisconnectedSessionLimitTests
     [Fact]
     public async Task A_disconnected_value_too_large_to_hold_says_so()
     {
-        var (exitCode, _, error) = await ViewerProcess.StartAsync("--disconnected", "99999999999");
+        var (exitCode, _, error) = await ViewerProcess.RunAsync("--disconnected", "99999999999");
 
         Assert.Equal(1, exitCode);
         Assert.Equal("--disconnected can be at most 2147483647, not \"99999999999\".", error.Trim());

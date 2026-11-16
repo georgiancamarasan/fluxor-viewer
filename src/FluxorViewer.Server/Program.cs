@@ -66,8 +66,7 @@ try
 }
 catch (IOException exception) when (exception.InnerException is AddressInUseException)
 {
-    Console.Error.WriteLine(
-        $"Port {port.Value} is already in use. Start the Viewer on another port with --port N, and point the Host app's ServerUrl at it.");
+    Console.Error.WriteLine(port.InUseMessage);
     return 1;
 }
 Console.WriteLine($"Fluxor Viewer: {port.Url}");

@@ -21,7 +21,7 @@ internal sealed class ViewerProcess : IAsyncDisposable
     /// <summary>Runs the Viewer with arguments that stop it before it listens (or never let it start), until it exits.</summary>
     /// <returns>Its exit code and everything it wrote to standard output and standard error.</returns>
     /// <exception cref="TimeoutException">The Viewer was still running after 30 seconds; it's killed.</exception>
-    public static async Task<(int ExitCode, string Output, string Error)> StartAsync(params string[] args)
+    public static async Task<(int ExitCode, string Output, string Error)> RunAsync(params string[] args)
     {
         using var process = Start(args);
         var error = process.StandardError.ReadToEndAsync(Wait.CancellationToken);

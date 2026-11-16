@@ -1,7 +1,7 @@
 @* Clear, with its inline prompt: clears a connected Session's History or removes a disconnected Session. *@
 @using System.Globalization
 
-<ClearPrompt Name="clear" Label="Clear" Enabled="CanClear" Subject="Session?.SessionId"
+<ClearPrompt TestName="clear" Label="Clear" Enabled="CanClear" Subject="Session?.SessionId"
              Question="@(Session is { } session ? Question(session) : "")" Confirmed="Confirm" />
 
 @code {

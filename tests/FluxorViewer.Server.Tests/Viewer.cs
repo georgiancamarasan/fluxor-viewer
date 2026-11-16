@@ -48,6 +48,10 @@ public sealed class Viewer : WebApplicationFactory<Program>
     /// <summary>The Viewer's Session registry, as the UI injects it.</summary>
     public SessionRegistry Registry => Services.GetRequiredService<SessionRegistry>();
 
+    /// <summary>The Session with this id, as the Viewer has it now; fails the test if there's none.</summary>
+    public ReceivedSession Session(Guid sessionId) =>
+        Registry.Find(sessionId) ?? throw new Xunit.Sdk.XunitException("Session not found.");
+
     /// <summary>Everything the Viewer logged, Debug and up, in order.</summary>
     public ConcurrentQueue<(LogLevel Level, string Category, string Message)> Logs { get; } = new();
 

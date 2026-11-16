@@ -19,10 +19,7 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
         return connection;
     }
 
-    private ReceivedSession Session(Guid sessionId) => Session(viewer, sessionId);
-
-    private static ReceivedSession Session(Viewer target, Guid sessionId) =>
-        target.Registry.Find(sessionId) ?? throw new Xunit.Sdk.XunitException("Session not found.");
+    private ReceivedSession Session(Guid sessionId) => viewer.Session(sessionId);
 
     [Fact]
     public async Task The_first_Snapshot_creates_a_connected_Session()
@@ -175,19 +172,20 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
         Guid[] clearing = [.. Enumerable.Range(0, 10).Select(_ => Guid.NewGuid())];
         // All 20 can be disconnected at once (IN-8's default limit is 10), and none may be forgotten.
         await using var roomy = new Viewer(new Dictionary<string, string?> { [DisconnectedSessionLimit.Key] = "20" });
+        var racing = new RacingSessions(roomy);
 
         await Task.WhenAll([
-            .. reconnecting.Select(id => ReportThenReconnect(roomy, id)),
-            .. clearing.Select(id => ReportClearingAfterEachBatchThenClose(roomy, id))]);
+            .. reconnecting.Select(racing.ReportThenReconnect),
+            .. clearing.Select(racing.ReportClearingAfterEachBatchThenClose)]);
 
-        await Wait.Until(() => clearing.All(id => Session(roomy, id).Status == SessionStatus.Disconnected));
-        Assert.All(reconnecting.Select(id => Session(roomy, id)), session =>
+        await Wait.Until(() => racing.AreAllDisconnected(clearing));
+        Assert.All(racing.Sessions(reconnecting), session =>
         {
             Assert.Equal(SessionStatus.Connected, session.Status);
-            Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], session.Actions.Select(a => a.Sequence));
+            Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], RacingSessions.Sequences(session));
             Assert.Equal(20, session.LastSequence);
         });
-        Assert.All(clearing.Select(id => Session(roomy, id)), session =>
+        Assert.All(racing.Sessions(clearing), session =>
         {
             // Cleared after its last batch, while still connected.
             Assert.Empty(session.History);
@@ -196,38 +194,53 @@ public class SessionLifecycleTests(Viewer viewer) : IClassFixture<Viewer>
         });
     }
 
-    /// <summary>Reports Actions 1–20, closes, and reconnects from where it was.</summary>
-    private static async Task ReportThenReconnect(Viewer target, Guid sessionId)
+    /// <summary>Sessions reporting to one Viewer at the same time, each racing the others' reads, writes and Clears.</summary>
+    private sealed class RacingSessions(Viewer viewer)
     {
-        await using (var connection = await target.ConnectAsync())
+        /// <summary>The Sessions with these ids, in the same order.</summary>
+        public ReceivedSession[] Sessions(IEnumerable<Guid> sessionIds) => [.. sessionIds.Select(viewer.Session)];
+
+        /// <summary>Whether every one of these Sessions is disconnected.</summary>
+        public bool AreAllDisconnected(IEnumerable<Guid> sessionIds) =>
+            Sessions(sessionIds).All(session => session.Status == SessionStatus.Disconnected);
+
+        /// <summary>The Sequences of the Session's Actions, in order.</summary>
+        public static long[] Sequences(ReceivedSession session) => [.. session.Actions.Select(action => action.Sequence)];
+
+        /// <summary>Reports Actions 1–20, closes, and reconnects from where it was.</summary>
+        public async Task ReportThenReconnect(Guid sessionId)
         {
-            await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
-            await SendTenBatches(target, connection, sessionId, afterEach: () => { });
+            await using (var connection = await viewer.ConnectAsync())
+            {
+                await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
+                await SendTenBatches(connection, sessionId);
+            }
+
+            var again = await viewer.ConnectAsync(); // left open: the Session stays connected for the assertions
+            await again.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 20 }, Wait.CancellationToken);
         }
 
-        var again = await target.ConnectAsync(); // left open: the Session stays connected for the assertions
-        await again.InvokeAsync("Snapshot", NewSnapshot(sessionId) with { LastSequence = 20 }, Wait.CancellationToken);
-    }
-
-    /// <summary>Reports Actions 1–20, Clearing the Session after each batch, then closes.</summary>
-    private static async Task ReportClearingAfterEachBatchThenClose(Viewer target, Guid sessionId)
-    {
-        await using var connection = await target.ConnectAsync();
-        await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
-        await SendTenBatches(target, connection, sessionId, afterEach: () => target.Registry.Clear(sessionId));
-    }
-
-    /// <summary>
-    /// Sends Actions 1–20 in batches of two, running <paramref name="afterEach"/> and reading the Session list between
-    /// batches, so registry reads and Clears race the other Sessions' writes.
-    /// </summary>
-    private static async Task SendTenBatches(Viewer target, HubConnection connection, Guid sessionId, Action afterEach)
-    {
-        for (var sequence = 1; sequence <= 20; sequence += 2)
+        /// <summary>Reports Actions 1–20, Clearing the Session after each batch, then closes.</summary>
+        public async Task ReportClearingAfterEachBatchThenClose(Guid sessionId)
         {
-            await connection.InvokeAsync("Actions", new[] { Increment(sessionId, sequence), Increment(sessionId, sequence + 1) }, Wait.CancellationToken);
-            afterEach();
-            _ = target.Registry.GetSessions();
+            await using var connection = await viewer.ConnectAsync();
+            await connection.InvokeAsync("Snapshot", NewSnapshot(sessionId), Wait.CancellationToken);
+            await SendTenBatches(connection, sessionId, afterEach: () => viewer.Registry.Clear(sessionId));
+        }
+
+        /// <summary>
+        /// Sends Actions 1–20 for <paramref name="sessionId"/> on <paramref name="connection"/> in batches of two, running
+        /// <paramref name="afterEach"/> and reading the Session list between batches, so registry reads and Clears race
+        /// the other Sessions' writes.
+        /// </summary>
+        private async Task SendTenBatches(HubConnection connection, Guid sessionId, Action? afterEach = null)
+        {
+            for (var sequence = 1; sequence <= 20; sequence += 2)
+            {
+                await connection.InvokeAsync("Actions", new[] { Increment(sessionId, sequence), Increment(sessionId, sequence + 1) }, Wait.CancellationToken);
+                afterEach?.Invoke();
+                _ = viewer.Registry.GetSessions();
+            }
         }
     }
 }

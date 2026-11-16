@@ -23,6 +23,9 @@ internal sealed class KnownSession(Snapshot firstSnapshot, long seenOrder, Histo
     /// <summary>The hub connection currently reporting the Session; null while it's disconnected.</summary>
     public string? ConnectionId { get; private set; }
 
+    /// <summary>Whether no connection reports the Session now; it may reconnect.</summary>
+    public bool IsDisconnected => ConnectionId is null;
+
     /// <summary>Feature states after the latest Action or Snapshot.</summary>
     public ImmutableDictionary<string, FeatureState> Current { get; private set; } = FeatureMap.Empty;
 

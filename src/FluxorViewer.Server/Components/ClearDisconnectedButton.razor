@@ -1,7 +1,7 @@
 @* Clear disconnected, with its inline prompt: removes every disconnected Session, from every Host app, at once. *@
 @using System.Globalization
 
-<ClearPrompt Name="clear-disconnected" Label="Clear disconnected" Enabled="Disconnected > 0" Question="@Question" Confirmed="Cleared" />
+<ClearPrompt TestName="clear-disconnected" Label="Clear disconnected" Enabled="Disconnected > 0" Question="@Question" Confirmed="Cleared" />
 
 @code {
     /// <summary>Every Session.</summary>

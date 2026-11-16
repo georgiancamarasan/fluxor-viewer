@@ -19,17 +19,29 @@ public class ReportingMemoryTests
     /// <summary>How much more one long string may cost than the same characters in pieces.</summary>
     private const double Allowance = 1.5;
 
-    /// <summary>
-    /// The bytes allocated, process-wide, from dispatching <paramref name="action"/> until the Viewer has it, the only
-    /// Action the test has dispatched since the Session started, or the one after <paramref name="sentBefore"/>.
-    /// </summary>
-    private static async Task<long> AllocatedReporting(Harness harness, FakeViewer.FakeConnection connection, object action,
-        int sentBefore = 0)
+    /// <summary>A started Session on its connection, measuring what reporting each Action allocates.</summary>
+    private sealed class Reporter(Harness harness, FakeViewer.FakeConnection connection)
     {
-        var before = GC.GetTotalAllocatedBytes(precise: true);
-        harness.Dispatcher.Dispatch(action);
-        await Harness.ActionsSent(connection, sentBefore + 1);
-        return GC.GetTotalAllocatedBytes(precise: true) - before;
+        private int sent;
+
+        /// <summary>Starts the Session on a connection.</summary>
+        public static async Task<Reporter> StartAsync(Harness harness)
+        {
+            var (connection, _) = await harness.StartConnected();
+            return new Reporter(harness, connection);
+        }
+
+        /// <summary>The bytes allocated, process-wide, from dispatching <paramref name="action"/> until the Viewer has it.</summary>
+        public async Task<long> AllocatedReporting(object action)
+        {
+            var before = GC.GetTotalAllocatedBytes(precise: true);
+            harness.Dispatcher.Dispatch(action);
+            await Harness.ActionsSent(connection, ++sent);
+            return GC.GetTotalAllocatedBytes(precise: true) - before;
+        }
+
+        /// <summary>Every Action the Viewer has received so far.</summary>
+        public Task<IReadOnlyList<ActionRecorded>> Sent() => Harness.ActionsSent(connection, sent);
     }
 
     /// <summary>The message when <paramref name="json"/> is exactly <c>{"$error": "message"}</c>.</summary>
@@ -49,13 +61,13 @@ public class ReportingMemoryTests
     public async Task A_Payload_of_one_long_string_needing_escaping_costs_about_what_the_same_characters_in_pieces_do()
     {
         await using var harness = new Harness();
-        var (connection, _) = await harness.StartConnected();
+        var reporter = await Reporter.StartAsync(harness);
         var quotes = new string('"', Million); // 6 MB of JSON, each " escaped to "
         var inPieces = new PiecesAction(InPieces(quotes, 1000));
         var whole = new WholeAction(quotes);
 
-        var piecesCost = await AllocatedReporting(harness, connection, inPieces);
-        var wholeCost = await AllocatedReporting(harness, connection, whole, sentBefore: 1);
+        var piecesCost = await reporter.AllocatedReporting(inPieces);
+        var wholeCost = await reporter.AllocatedReporting(whole);
 
         Assert.InRange(wholeCost, 0, piecesCost * Allowance);
     }
@@ -64,12 +76,12 @@ public class ReportingMemoryTests
     public async Task A_Feature_state_of_one_long_non_ASCII_string_costs_about_what_the_same_characters_in_pieces_do()
     {
         await using var harness = new Harness(types: Accents);
-        var (connection, _) = await harness.StartConnected();
+        var reporter = await Reporter.StartAsync(harness);
         var inPieces = new WriteAccentsInPiecesAction(Million, Pieces: 1000); // 6 MB of JSON, each é escaped to é
         var whole = new WriteAccentsAction(Million);
 
-        var piecesCost = await AllocatedReporting(harness, connection, inPieces);
-        var wholeCost = await AllocatedReporting(harness, connection, whole, sentBefore: 1);
+        var piecesCost = await reporter.AllocatedReporting(inPieces);
+        var wholeCost = await reporter.AllocatedReporting(whole);
 
         Assert.InRange(wholeCost, 0, piecesCost * Allowance);
     }
@@ -91,15 +103,15 @@ public class ReportingMemoryTests
     public async Task A_Payload_over_MaxValueSize_costs_no_more_however_far_over_it_is()
     {
         await using var harness = new Harness(configure: v => v.MaxValueSize = Megabyte);
-        var (connection, _) = await harness.StartConnected();
+        var reporter = await Reporter.StartAsync(harness);
         var twoMegabytes = new WholeAction(new string('"', Million / 3)); // each " escaped to \u0022, 6 bytes
         var twelveMegabytes = new WholeAction(new string('"', 2 * Million));
 
-        var twoMegabytesCost = await AllocatedReporting(harness, connection, twoMegabytes);
-        var twelveMegabytesCost = await AllocatedReporting(harness, connection, twelveMegabytes, sentBefore: 1);
+        var twoMegabytesCost = await reporter.AllocatedReporting(twoMegabytes);
+        var twelveMegabytesCost = await reporter.AllocatedReporting(twelveMegabytes);
 
         Assert.InRange(twelveMegabytesCost, 0, twoMegabytesCost * Allowance);
-        Assert.All(await Harness.ActionsSent(connection, 2),
+        Assert.All(await reporter.Sent(),
             action => Assert.StartsWith("Larger than MaxValueSize (1 MB): ", Error(action.Payload)));
     }
 

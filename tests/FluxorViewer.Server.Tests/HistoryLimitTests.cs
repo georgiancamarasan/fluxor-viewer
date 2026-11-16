@@ -59,7 +59,7 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
     [InlineData("", "--history must be a whole number of at least 1, not \"\".")]
     public async Task A_history_that_is_not_a_whole_number_of_at_least_1_stops_the_Viewer_with_one_line(string value, string message)
     {
-        var (exitCode, _, error) = await ViewerProcess.StartAsync("--history", value);
+        var (exitCode, _, error) = await ViewerProcess.RunAsync("--history", value);
 
         Assert.Equal(1, exitCode);
         Assert.Equal(message, error.Trim());
@@ -68,7 +68,7 @@ public class HistoryLimitTests(Viewer viewer) : IClassFixture<Viewer>
     [Fact]
     public async Task A_history_too_large_to_hold_says_so()
     {
-        var (exitCode, _, error) = await ViewerProcess.StartAsync("--history", "99999999999");
+        var (exitCode, _, error) = await ViewerProcess.RunAsync("--history", "99999999999");
 
         Assert.Equal(1, exitCode);
         Assert.Equal("--history can be at most 2147483647, not \"99999999999\".", error.Trim());

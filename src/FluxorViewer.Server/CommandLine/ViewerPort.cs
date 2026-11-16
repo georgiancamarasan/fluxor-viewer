@@ -12,10 +12,14 @@ public sealed record ViewerPort(int Value)
     public static readonly ViewerPort Default = new(5299);
 
     // 0 (any free port) isn't allowed: the Host app's ServerUrl needs a port that stays the same between runs.
-    private static readonly WholeNumberSetting Setting = new(Key, Minimum: 1, Default.Value, Maximum: 65535);
+    private static readonly WholeNumberSetting Setting = new(Key, new WholeNumberRange(Minimum: 1, Maximum: 65535), Default.Value);
 
     /// <summary>Where the Viewer listens, as the developer opens it and a Host app's <c>ServerUrl</c> gives it.</summary>
     public string Url => $"http://localhost:{Value}";
+
+    /// <summary>What the developer is told when another program already listens on this port, as one line.</summary>
+    public string InUseMessage =>
+        $"Port {Value} is already in use. Start the Viewer on another port with --port N, and point the Host app's ServerUrl at it.";
 
     /// <summary>Reads the port set by <see cref="Key"/>, or <see cref="Default"/> when it isn't set.</summary>
     /// <param name="error">Why the value can't be used, as one line for the developer; null when it can.</param>

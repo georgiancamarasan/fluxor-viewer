@@ -3,21 +3,21 @@
 @if (prompting)
 {
     @* The text comes first so the confirm button doesn't land where the button was: a double-click can't confirm. *@
-    <div class="flex items-center gap-2" role="group" aria-label="Confirm @Label" data-test="@(Name)-prompt" @onkeydown="OnKeyDown">
-        <span class="text-sm" data-test="@(Name)-question">@Question</span>
-        <button class="control border-red-300 text-red-700 dark:border-red-800 dark:text-red-400" data-test="@(Name)-confirm" @onclick="Confirm">Clear</button>
+    <div class="flex items-center gap-2" role="group" aria-label="Confirm @Label" data-test="@(TestName)-prompt" @onkeydown="OnKeyDown">
+        <span class="text-sm" data-test="@(TestName)-question">@Question</span>
+        <button class="control border-red-300 text-red-700 dark:border-red-800 dark:text-red-400" data-test="@(TestName)-confirm" @onclick="Confirm">Clear</button>
         @* :focus, not :focus-visible: the prompt opens from a mouse click, after which the browser wouldn't show a focus-visible ring. *@
-        <button class="control focus:outline-2 focus:outline-offset-2 focus:outline-sky-500 dark:focus:outline-sky-400" data-test="@(Name)-cancel" @ref="cancel" @onclick="Cancel">Cancel</button>
+        <button class="control focus:outline-2 focus:outline-offset-2 focus:outline-sky-500 dark:focus:outline-sky-400" data-test="@(TestName)-cancel" @ref="cancel" @onclick="Cancel">Cancel</button>
     </div>
 }
 else
 {
-    <button class="control" disabled="@(!Enabled)" data-test="@Name" @onclick="Open">@Label</button>
+    <button class="control" disabled="@(!Enabled)" data-test="@TestName" @onclick="Open">@Label</button>
 }
 
 @code {
     /// <summary>The <c>data-test</c> name of the button; the prompt's parts are named after it.</summary>
-    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter, EditorRequired] public string TestName { get; set; } = "";
 
     /// <summary>The button's text.</summary>
     [Parameter, EditorRequired] public string Label { get; set; } = "";
@@ -29,19 +29,19 @@ else
     [Parameter] public string Question { get; set; } = "";
 
     /// <summary>What Clear acts on, if it can change under the prompt (the selected Session); the prompt closes when it does.</summary>
-    [Parameter] public object? Subject { get; set; }
+    [Parameter] public Guid? Subject { get; set; }
 
     /// <summary>The developer confirmed.</summary>
     [Parameter] public EventCallback Confirmed { get; set; }
 
     private bool prompting;
-    private object? promptedFor;
+    private Guid? promptedFor;
     private bool focusCancel;
     private ElementReference cancel;
 
     protected override void OnParametersSet()
     {
-        if (prompting && (!Equals(Subject, promptedFor) || !Enabled))
+        if (prompting && (Subject != promptedFor || !Enabled))
             prompting = false;
     }
 

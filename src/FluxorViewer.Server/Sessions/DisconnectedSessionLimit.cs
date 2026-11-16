@@ -13,7 +13,7 @@ public sealed record DisconnectedSessionLimit(int Value)
     public static readonly DisconnectedSessionLimit Default = new(10);
 
     // 0 is allowed: a Session is forgotten as soon as it disconnects.
-    private static readonly WholeNumberSetting Setting = new(Key, Minimum: 0, Default.Value);
+    private static readonly WholeNumberSetting Setting = new(Key, new WholeNumberRange(Minimum: 0), Default.Value);
 
     /// <summary>Reads the limit set by <see cref="Key"/>, or <see cref="Default"/> when it isn't set.</summary>
     /// <param name="error">Why the value can't be used, as one line for the developer; null when it can.</param>

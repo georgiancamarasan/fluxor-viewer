@@ -113,7 +113,7 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
         {
             if (!sessions.TryGetValue(sessionId, out var session))
                 return;
-            if (session.ConnectionId is null)
+            if (session.IsDisconnected)
                 sessions.Remove(sessionId);
             else
                 session.ClearHistory();
@@ -130,7 +130,7 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
         List<Guid> removed;
         lock (gate)
         {
-            removed = [.. sessions.Values.Where(s => s.ConnectionId is null).Select(s => s.SessionId)];
+            removed = [.. Disconnected().Select(s => s.SessionId)];
             foreach (var sessionId in removed)
                 sessions.Remove(sessionId);
         }
@@ -156,7 +156,7 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
     private (KnownSession Session, SessionChange? Change) FindOrAdd(Snapshot snapshot)
     {
         if (sessions.TryGetValue(snapshot.SessionId, out var known))
-            return (known, known.ConnectionId is null ? new SessionStatusChanged(snapshot.SessionId, SessionStatus.Connected) : null);
+            return (known, known.IsDisconnected ? new SessionStatusChanged(snapshot.SessionId, SessionStatus.Connected) : null);
         var added = sessions[snapshot.SessionId] = new KnownSession(snapshot, ++seen, limits.History);
         return (added, new SessionAdded(snapshot.SessionId));
     }
@@ -177,7 +177,7 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
     /// <returns>The change to raise, like <see cref="FindOrAdd"/>'s; null if nothing was forgotten.</returns>
     private SessionForgotten? ForgetPastLimit()
     {
-        var disconnected = sessions.Values.Where(s => s.ConnectionId is null).ToList();
+        var disconnected = Disconnected();
         if (disconnected.Count <= limits.Disconnected.Value)
             return null;
         var oldest = disconnected.MinBy(s => s.DisconnectOrder)!;
@@ -186,6 +186,9 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> logger, TimeProvide
         logger.LogDebug("Forgot disconnected Session {SessionId} to keep {Limit} disconnected Sessions.", oldest.SessionId, limits.Disconnected.Value);
         return new SessionForgotten(oldest.SessionId);
     }
+
+    /// <summary>Every Session that is disconnected now.</summary>
+    private List<KnownSession> Disconnected() => [.. sessions.Values.Where(s => s.IsDisconnected)];
 
     /// <summary>The Session <paramref name="connectionId"/> reports, if that connection is still the Session's current one.</summary>
     private KnownSession? ReportedBy(string connectionId) =>

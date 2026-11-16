@@ -47,6 +47,9 @@ public class ClearDisconnectedPageTests : BunitContext
 
     private static void Confirm(IRenderedComponent<Home> page) => page.Find("[data-test=clear-disconnected-confirm]").Click();
 
+    private static string?[] TestNames(AngleSharp.Dom.IElement element) =>
+        [.. element.QuerySelectorAll("[data-test]").Select(c => c.GetAttribute("data-test"))];
+
     private static bool Prompting(IRenderedComponent<Home> page) => page.FindAll("[data-test=clear-disconnected-prompt]").Count > 0;
 
     [Fact]
@@ -119,7 +122,7 @@ public class ClearDisconnectedPageTests : BunitContext
         var prompt = page.Find("[data-test=clear-disconnected-prompt]");
         Assert.Equal(
             ["clear-disconnected-question", "clear-disconnected-confirm", "clear-disconnected-cancel"],
-            prompt.QuerySelectorAll("[data-test]").Select(c => c.GetAttribute("data-test")));
+            TestNames(prompt));
         JSInterop.VerifyFocusAsyncInvoke();
     }
 

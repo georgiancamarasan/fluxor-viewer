@@ -48,7 +48,7 @@ public class CommandLineTests
         using var taken = Occupy(0)!;
         var port = ((IPEndPoint)taken.LocalEndpoint).Port;
 
-        var (exitCode, _, error) = await ViewerProcess.StartAsync("--port", port.ToString());
+        var (exitCode, _, error) = await ViewerProcess.RunAsync("--port", port.ToString());
 
         Assert.Equal(1, exitCode);
         Assert.Equal(
@@ -61,7 +61,7 @@ public class CommandLineTests
     {
         using var taken = Occupy(5299);
 
-        var (exitCode, _, error) = await ViewerProcess.StartAsync();
+        var (exitCode, _, error) = await ViewerProcess.RunAsync();
 
         Assert.Equal(1, exitCode);
         Assert.Equal(
@@ -78,7 +78,7 @@ public class CommandLineTests
     [InlineData("")]
     public async Task A_port_outside_1_to_65535_stops_the_Viewer_with_one_line(string value)
     {
-        var (exitCode, _, error) = await ViewerProcess.StartAsync("--port", value);
+        var (exitCode, _, error) = await ViewerProcess.RunAsync("--port", value);
 
         Assert.Equal(1, exitCode);
         Assert.Equal($"--port must be a whole number from 1 to 65535, not \"{value}\".", error.Trim());
@@ -89,7 +89,7 @@ public class CommandLineTests
     [InlineData("-h")]
     public async Task Help_documents_every_option_with_its_default_and_starts_nothing(string help)
     {
-        var (exitCode, output, error) = await ViewerProcess.StartAsync(help);
+        var (exitCode, output, error) = await ViewerProcess.RunAsync(help);
 
         Assert.Equal(0, exitCode);
         Assert.Empty(error);

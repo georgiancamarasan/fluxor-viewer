@@ -12,7 +12,7 @@ public sealed record HistoryLimit(int Value)
     /// <summary>The limit when <see cref="Key"/> isn't set: 1,000 entries per Session.</summary>
     public static readonly HistoryLimit Default = new(1000);
 
-    private static readonly WholeNumberSetting Setting = new(Key, Minimum: 1, Default.Value);
+    private static readonly WholeNumberSetting Setting = new(Key, new WholeNumberRange(Minimum: 1), Default.Value);
 
     /// <summary>Reads the limit set by <see cref="Key"/>, or <see cref="Default"/> when it isn't set.</summary>
     /// <param name="error">Why the value can't be used, as one line for the developer; null when it can.</param>
