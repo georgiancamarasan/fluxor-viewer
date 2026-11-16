@@ -20,7 +20,7 @@ public class HistoryLimitPageTests : BunitContext
     {
         Services.AddSingleton(registry);
         Services.AddSingleton(TimeProvider.System);
-        JSInterop.SetupPaneModules();
+        JSInterop.SetupPageModules();
     }
 
     private static FeatureState Weather(long day) => new("Weather", "App.WeatherState", $$"""{"Day":{{day}}}""");

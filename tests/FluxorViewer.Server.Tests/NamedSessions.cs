@@ -1,3 +1,4 @@
+using FluxorViewer.Protocol;
 using FluxorViewer.Server.Sessions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -28,6 +29,20 @@ internal sealed class NamedSessions(SessionRegistry registry)
             ids[name] = Guid.NewGuid();
             registry.SnapshotReceived(name, NewSnapshot(ids[name]));
         }
+    }
+
+    /// <summary>
+    /// Starts a Session of the Host app <paramref name="appName"/> as <paramref name="name"/>, its first Snapshot on a
+    /// connection of that name holding empty states of <paramref name="features"/>.
+    /// </summary>
+    public void StartForApp(string name, string appName, params string[] features)
+    {
+        ids[name] = Guid.NewGuid();
+        registry.SnapshotReceived(name, NewSnapshot(ids[name]) with
+        {
+            AppName = appName,
+            Features = [.. features.Select(f => new FeatureState(f, $"App.{f}State", "{}"))],
+        });
     }
 
     /// <summary>Closes the connection of each name, in order.</summary>

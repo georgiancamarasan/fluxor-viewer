@@ -18,7 +18,7 @@ public class ClearDisconnectedPageTests : BunitContext
     {
         UseLimit(10);
         Services.AddSingleton(TimeProvider.System);
-        JSInterop.SetupPaneModules();
+        JSInterop.SetupPageModules();
     }
 
     private void UseLimit(int disconnected)

@@ -22,7 +22,7 @@ public class KeyboardNavigationPageTests : BunitContext
     {
         Services.AddSingleton(registry);
         Services.AddSingleton<TimeProvider>(new FixedZoneTime());
-        (scroll, _) = JSInterop.SetupPaneModules();
+        (scroll, _) = JSInterop.SetupPageModules();
     }
 
     private int[] RowsScrolledIntoView =>

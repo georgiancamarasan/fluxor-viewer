@@ -16,7 +16,7 @@ public class ForgettingPageTests : BunitContext
     {
         UseLimit(1);
         Services.AddSingleton(TimeProvider.System);
-        JSInterop.SetupPaneModules();
+        JSInterop.SetupPageModules();
     }
 
     private void UseLimit(int disconnected)

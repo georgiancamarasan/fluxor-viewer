@@ -11,7 +11,7 @@
     <header class="flex flex-wrap items-center gap-4 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
         <SessionPicker Sessions="sessions" Selected="selection.Selected" SelectedChanged="Select"
                        ForgottenBeyond="Registry.ForgottenBeyond" />
-        <FeaturePicker Features="features.Features" HasSession="picksLoaded && selection.Selected is not null"
+        <FeaturePicker Features="features.Features" HasSession="FeatureSession is not null"
                        Selected="@features.Selected" SelectedChanged="SelectFeature" />
         <ClearButton Session="SelectedSession" Cleared="Clear" />
         <ClearDisconnectedButton Sessions="sessions" Cleared="ClearDisconnected" />
@@ -20,6 +20,11 @@
     @if (sessions.Count == 0)
     {
         <Waiting />
+    }
+    else if (!picksLoaded)
+    {
+        @* UI-13: the Action list's dimming and the tabs depend on the Feature, so they wait for the stored picks too. *@
+        <main class="flex-1"></main>
     }
     else
     {
@@ -80,7 +85,6 @@
     private RenderThrottle? throttle;
     private CollocatedModule module = default!;
 
-    // UI-13: no Feature is chosen until the stored picks are loaded, so the first Feature never shows only to be replaced.
     private bool picksLoaded;
 
     protected override void OnInitialized()
@@ -114,8 +118,9 @@
         {
             return await module.InvokeAsync<Dictionary<string, string>>("loadFeaturePicks");
         }
-        catch (JSException)
+        catch (Exception e) when (e is JSException or TaskCanceledException or JSDisconnectedException)
         {
+            // TaskCanceledException is the interop timeout, e.g. a module import that never finishes.
             return new Dictionary<string, string>();
         }
     }
@@ -182,13 +187,15 @@
 
     private ReceivedSession? SelectedSession => sessions.FirstOrDefault(s => s.SessionId == selection.Selected);
 
+    // UI-13: the Session whose Features can be chosen from; none until the stored picks are loaded, so the first Feature
+    // never shows only to be replaced.
+    private ReceivedSession? FeatureSession => picksLoaded ? SelectedSession : null;
+
     /// <summary>Re-reads what depends on the selected Session: its Features, then its Actions against the Feature.</summary>
     private void UpdateSelectedSession()
     {
-        var session = SelectedSession;
-        var featureSession = picksLoaded ? session : null;
-        features.Update(featureSession?.AppName, featureSession?.Current.Keys ?? []);
-        actions.Update(session, features.Selected);
+        features.Update(FeatureSession?.AppName, FeatureSession?.Current.Keys ?? []);
+        actions.Update(SelectedSession, features.Selected);
     }
 
     /// <summary>Stops listening to the registry and releases the page's JS module.</summary>

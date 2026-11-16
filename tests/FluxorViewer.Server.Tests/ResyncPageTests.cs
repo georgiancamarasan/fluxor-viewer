@@ -24,7 +24,7 @@ public class ResyncPageTests : BunitContext
     {
         Services.AddSingleton(registry);
         Services.AddSingleton<TimeProvider>(new FixedZoneTime());
-        (_, diff) = JSInterop.SetupPaneModules();
+        (_, diff) = JSInterop.SetupPageModules();
     }
 
     private void Snapshot(long lastSequence, long droppedCount = 0, int count = 0) => registry.SnapshotReceived("c1",

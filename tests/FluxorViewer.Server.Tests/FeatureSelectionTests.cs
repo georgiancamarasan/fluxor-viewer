@@ -100,16 +100,4 @@ public class FeatureSelectionTests
 
         Assert.Equal("Basket", selection.Selected);
     }
-
-    [Fact]
-    public void A_pick_made_before_the_stored_picks_arrive_wins_over_them()
-    {
-        selection.Update("ShopApp", ["Auth", "Basket", "Counter"]);
-        selection.Select("ShopApp", "Counter");
-
-        selection.Restore(new Dictionary<string, string> { ["ShopApp"] = "Basket" });
-        selection.Update("ShopApp", ["Auth", "Basket", "Counter"]);
-
-        Assert.Equal("Counter", selection.Selected);
-    }
 }

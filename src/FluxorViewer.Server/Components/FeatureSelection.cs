@@ -25,15 +25,11 @@ public sealed class FeatureSelection
         Selected = Features.Contains(featureName) ? featureName : Selected;
     }
 
-    /// <summary>
-    /// Takes up the picks stored in the browser, by app name, except for Host apps already picked for in this Viewer tab.
-    /// Call <see cref="Update"/> to apply them.
-    /// </summary>
+    /// <summary>Takes up the picks stored in the browser, by app name. Call <see cref="Update"/> to apply them.</summary>
     public void Restore(IReadOnlyDictionary<string, string> storedPicks)
     {
-        // The stored picks arrive after the first render, so a pick the developer made meanwhile is the newer one.
         foreach (var (appName, featureName) in storedPicks)
-            picks.TryAdd(appName, featureName);
+            picks[appName] = featureName;
     }
 
     /// <summary>

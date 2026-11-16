@@ -8,7 +8,7 @@ using Microsoft.JSInterop;
 
 namespace FluxorViewer.Server.Tests;
 
-// UI-1 to UI-8: the layout shell, Session and Feature pickers, Action list, State and Diff tabs, payload strip and Clear, against a real registry.
+// UI-1 to UI-8, UI-13: the layout shell, Session and Feature pickers (the pick kept per Host app), Action list, State and Diff tabs, payload strip and Clear, against a real registry.
 public class HomePageTests : BunitContext
 {
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, SessionLimits.Default);
@@ -20,7 +20,7 @@ public class HomePageTests : BunitContext
     {
         Services.AddSingleton(registry);
         Services.AddSingleton<TimeProvider>(new FixedZoneTime());
-        (scroll, diff) = JSInterop.SetupPaneModules();
+        (scroll, diff) = JSInterop.SetupPageModules();
     }
 
     private static Snapshot NewSnapshot(Guid sessionId, string appName = "MyApp", Runtime runtime = Runtime.WebAssembly, params string[] features) => new(

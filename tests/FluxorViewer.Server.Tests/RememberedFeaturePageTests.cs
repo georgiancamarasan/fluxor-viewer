@@ -13,23 +13,20 @@ namespace FluxorViewer.Server.Tests;
 public class RememberedFeaturePageTests : BunitContext
 {
     private readonly SessionRegistry registry = new(NullLogger<SessionRegistry>.Instance, TimeProvider.System, SessionLimits.Default);
+    private readonly NamedSessions sessions;
 
     public RememberedFeaturePageTests()
     {
+        sessions = new(registry);
         Services.AddSingleton(registry);
         Services.AddSingleton<TimeProvider>(new FixedZoneTime());
-        JSInterop.SetupPaneModules();
+        JSInterop.SetupPageModules();
     }
 
-    private readonly Dictionary<string, Guid> sessionIds = [];
+    private void Connect(string name, string appName, params string[] features) => sessions.StartForApp(name, appName, features);
 
-    private void Connect(string connectionId, string appName, params string[] features) =>
-        registry.SnapshotReceived(connectionId, new Snapshot(
-            ProtocolVersion.Current, sessionIds[connectionId] = Guid.NewGuid(), appName, Runtime.WebAssembly, DateTimeOffset.UtcNow, 0, 0,
-            [.. features.Select(f => new FeatureState(f, $"App.{f}State", "{}"))]));
-
-    private void SelectSession(IRenderedComponent<Home> page, string connectionId) =>
-        page.Find("[data-test=session-picker]").Change(sessionIds[connectionId].ToString());
+    private void SelectSession(IRenderedComponent<Home> page, string name) =>
+        page.Find("[data-test=session-picker]").Change(sessions[name].ToString());
 
     private static void SelectFeature(IRenderedComponent<Home> page, string feature) =>
         page.Find("[data-test=feature-picker]").Change(feature);
@@ -106,5 +103,35 @@ public class RememberedFeaturePageTests : BunitContext
         SelectSession(page, "c1");
 
         Assert.Equal("Counter", SelectedFeature(page));
+    }
+
+    [Fact]
+    public void When_loading_the_stored_picks_times_out_the_first_Feature_is_selected()
+    {
+        JSInterop.SetupLoadingFeaturePicks().SetException(new TaskCanceledException("The JS call timed out"));
+        Connect("c1", "ShopApp", "Auth", "Counter");
+
+        var page = Render<Home>();
+
+        page.WaitForAssertion(() => Assert.Equal("Auth", SelectedFeature(page)));
+    }
+
+    [Fact]
+    public void The_Action_list_and_tabs_wait_for_the_stored_picks_so_rows_are_not_dimmed_late()
+    {
+        var load = JSInterop.SetupLoadingFeaturePicks();
+        Connect("c1", "ShopApp", "Auth", "Counter");
+        registry.ActionsReceived("c1", [new ActionRecorded(
+            sessions["c1"], 1, DateTimeOffset.UtcNow, "App.Login", "{}", [new FeatureState("Auth", "App.AuthState", "{}")])]);
+
+        var page = Render<Home>();
+
+        Assert.Empty(page.FindAll("[data-test=action-row]"));
+        Assert.Empty(page.FindAll("[data-test=tabs]"));
+
+        load.SetResult(new() { ["ShopApp"] = "Counter" });
+
+        page.WaitForAssertion(() =>
+            Assert.Equal(["true"], page.FindAll("[data-test=action-row]").Select(r => r.GetAttribute("data-dimmed"))));
     }
 }
