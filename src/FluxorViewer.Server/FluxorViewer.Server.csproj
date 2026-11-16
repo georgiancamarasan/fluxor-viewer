@@ -40,9 +40,13 @@
   <Target Name="Tailwind" DependsOnTargets="NpmInstall" BeforeTargets="BeforeBuild"
           Inputs="@(TailwindSource);package-lock.json" Outputs="$(TailwindOutput)">
     <Exec Command="npm run build --silent" />
-    <!-- On a clean build the file didn't exist when wwwroot was globbed, so add it for static web assets. -->
+    <!--
+      On a clean build the file didn't exist when wwwroot was globbed, so add it for static web assets. Removed by full
+      path: a Remove inside a target matches item specs as strings, so on Windows wwwroot/app.css misses the globbed
+      wwwroot\app.css and the file ends up in Content twice.
+    -->
     <ItemGroup>
-      <Content Remove="$(TailwindOutput)" />
+      <Content Remove="@(Content)" Condition="'%(FullPath)' == '$([MSBuild]::NormalizePath($(MSBuildProjectDirectory), $(TailwindOutput)))'" />
       <Content Include="$(TailwindOutput)" />
     </ItemGroup>
   </Target>
@@ -57,9 +61,9 @@
     </ItemGroup>
     <Copy SourceFiles="@(JsonDiffPatchFile)" SkipUnchangedFiles="true"
           DestinationFiles="@(JsonDiffPatchFile->'wwwroot/lib/jsondiffpatch/%(RecursiveDir)%(Filename)%(Extension)')" />
-    <!-- As for app.css: on a clean build these didn't exist when wwwroot was globbed. -->
+    <!-- As for app.css: on a clean build these didn't exist when wwwroot was globbed, and removed by full path. -->
     <ItemGroup>
-      <Content Remove="wwwroot/lib/jsondiffpatch/**" />
+      <Content Remove="@(Content)" Condition="$([System.String]::Copy('%(FullPath)').StartsWith('$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), wwwroot, lib, jsondiffpatch))'))" />
       <Content Include="wwwroot/lib/jsondiffpatch/**" />
     </ItemGroup>
   </Target>

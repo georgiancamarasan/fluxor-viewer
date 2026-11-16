@@ -8,5 +8,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!-- Only the projects that ship as packages opt in (PK-3). -->
     <IsPackable>false</IsPackable>
+    <!-- The Web SDK warns when a solution-wide pack reaches a non-packable web project (AutoSample); skipping it is intended. -->
+    <WarnOnPackingNonPackableProject>false</WarnOnPackingNonPackableProject>
   </PropertyGroup>
 </Project>
