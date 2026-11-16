@@ -179,11 +179,11 @@ public class HomePageTests : BunitContext
     }
 
     [Fact]
-    public void The_picked_Feature_is_kept_across_Sessions_that_have_it()
+    public void The_picked_Feature_is_kept_across_the_Host_apps_Sessions_that_have_it_in_either_Runtime()
     {
         registry.SnapshotReceived("c1", NewSnapshot(Id("aaaa"), features: ["Auth", "Counter"]));
-        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), "Other", features: ["Basket"]));
-        registry.SnapshotReceived("c3", NewSnapshot(Id("cccc"), "Third", features: ["Counter", "Weather"]));
+        registry.SnapshotReceived("c2", NewSnapshot(Id("bbbb"), features: ["Basket"]));
+        registry.SnapshotReceived("c3", NewSnapshot(Id("cccc"), runtime: Runtime.Server, features: ["Auth", "Counter", "Weather"]));
         var page = Render<Home>();
         SelectSession(page, Id("aaaa"));
         SelectFeature(page, "Counter");

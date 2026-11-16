@@ -1,7 +1,8 @@
 @* The Viewer's one page: toolbar, Action list and the State and Diff tabs for the selected Session, kept up to date from the registry. *@
 @page "/"
-@implements IDisposable
+@implements IAsyncDisposable
 @inject SessionRegistry Registry
+@inject IJSRuntime JS
 @inject TimeProvider Time
 
 <PageTitle>Fluxor Viewer</PageTitle>
@@ -10,7 +11,7 @@
     <header class="flex flex-wrap items-center gap-4 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
         <SessionPicker Sessions="sessions" Selected="selection.Selected" SelectedChanged="Select"
                        ForgottenBeyond="Registry.ForgottenBeyond" />
-        <FeaturePicker Features="features.Features" HasSession="selection.Selected is not null"
+        <FeaturePicker Features="features.Features" HasSession="picksLoaded && selection.Selected is not null"
                        Selected="@features.Selected" SelectedChanged="SelectFeature" />
         <ClearButton Session="SelectedSession" Cleared="Clear" />
         <ClearDisconnectedButton Sessions="sessions" Cleared="ClearDisconnected" />
@@ -77,9 +78,14 @@
     private IReadOnlyList<ReceivedSession> sessions = [];
     private readonly RightPaneState pane = new();
     private RenderThrottle? throttle;
+    private CollocatedModule module = default!;
+
+    // UI-13: no Feature is chosen until the stored picks are loaded, so the first Feature never shows only to be replaced.
+    private bool picksLoaded;
 
     protected override void OnInitialized()
     {
+        module = new(JS, "./Components/Pages/Home.razor.js");
         Refresh();
         // A burst of Actions re-reads and renders about 10 times a second, not once per batch.
         throttle = new RenderThrottle(Time, TimeSpan.FromMilliseconds(100), () => _ = InvokeAsync(() =>
@@ -88,6 +94,30 @@
             StateHasChanged();
         }));
         Registry.Changed += OnChanged;
+    }
+
+    // UI-13: the browser's stored Feature picks can only be read once the page is rendered.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+        features.Restore(await LoadFeaturePicksAsync());
+        picksLoaded = true;
+        UpdateSelectedSession();
+        StateHasChanged();
+    }
+
+    // Without the stored picks the tab still keeps its own picks in memory, as before UI-13.
+    private async Task<IReadOnlyDictionary<string, string>> LoadFeaturePicksAsync()
+    {
+        try
+        {
+            return await module.InvokeAsync<Dictionary<string, string>>("loadFeaturePicks");
+        }
+        catch (JSException)
+        {
+            return new Dictionary<string, string>();
+        }
     }
 
     private void OnChanged(SessionChange change)
@@ -129,10 +159,25 @@
         Refresh();
     }
 
-    private void SelectFeature(string featureName)
+    private async Task SelectFeature(string featureName)
     {
-        features.Select(featureName);
+        if (SelectedSession is not { } session)
+            return;
+        features.Select(session.AppName, featureName);
         UpdateSelectedSession();
+        await SaveFeaturePickAsync(session.AppName, featureName);
+    }
+
+    // A pick that can't be stored is still kept in memory for this Viewer tab.
+    private async Task SaveFeaturePickAsync(string appName, string featureName)
+    {
+        try
+        {
+            await module.InvokeVoidAsync("saveFeaturePick", appName, featureName);
+        }
+        catch (JSException)
+        {
+        }
     }
 
     private ReceivedSession? SelectedSession => sessions.FirstOrDefault(s => s.SessionId == selection.Selected);
@@ -141,14 +186,16 @@
     private void UpdateSelectedSession()
     {
         var session = SelectedSession;
-        features.Update(session?.Current.Keys ?? []);
+        var featureSession = picksLoaded ? session : null;
+        features.Update(featureSession?.AppName, featureSession?.Current.Keys ?? []);
         actions.Update(session, features.Selected);
     }
 
-    /// <summary>Stops listening to the registry.</summary>
-    public void Dispose()
+    /// <summary>Stops listening to the registry and releases the page's JS module.</summary>
+    public async ValueTask DisposeAsync()
     {
         Registry.Changed -= OnChanged;
         throttle?.Dispose();
+        await module.DisposeAsync();
     }
 }

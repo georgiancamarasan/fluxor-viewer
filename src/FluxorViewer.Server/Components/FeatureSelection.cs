@@ -4,13 +4,13 @@ namespace FluxorViewer.Server.Components;
 /// Which Feature one Viewer tab has selected, and the Features it can choose from.
 /// </summary>
 /// <remarks>
-/// The developer's last explicit pick is remembered by name across Sessions. When the current Session doesn't have it,
-/// its first Feature is selected instead, without forgetting the pick, so returning to a Session that has it selects
-/// it again. <see cref="Update"/> is given the full list each time, like <see cref="SessionSelection"/>.
+/// The developer's last explicit pick for each Host app is remembered by name across that app's Sessions, whatever their
+/// Runtime (UI-13). When the current Session doesn't have it, its first Feature is selected instead, without forgetting
+/// the pick, so returning to a Session that has it selects it again. <see cref="Update"/> is given the full list each time, like <see cref="SessionSelection"/>.
 /// </remarks>
 public sealed class FeatureSelection
 {
-    private string? picked;
+    private readonly Dictionary<string, string> picks = [];
 
     /// <summary>The selected Session's Feature names, alphabetically ignoring case.</summary>
     public IReadOnlyList<string> Features { get; private set; } = [];
@@ -18,16 +18,31 @@ public sealed class FeatureSelection
     /// <summary>The Feature to show; null when the selected Session has no Features or none is selected.</summary>
     public string? Selected { get; private set; }
 
-    /// <summary>The developer picked a Feature.</summary>
-    public void Select(string featureName)
+    /// <summary>The developer picked a Feature in a Session of the Host app named <paramref name="appName"/>.</summary>
+    public void Select(string appName, string featureName)
     {
-        picked = featureName;
+        picks[appName] = featureName;
         Selected = Features.Contains(featureName) ? featureName : Selected;
     }
 
-    /// <summary>Applies the selection rules to the selected Session's Features (none when no Session is selected).</summary>
-    public void Update(IEnumerable<string> featureNames)
+    /// <summary>
+    /// Takes up the picks stored in the browser, by app name, except for Host apps already picked for in this Viewer tab.
+    /// Call <see cref="Update"/> to apply them.
+    /// </summary>
+    public void Restore(IReadOnlyDictionary<string, string> storedPicks)
     {
+        // The stored picks arrive after the first render, so a pick the developer made meanwhile is the newer one.
+        foreach (var (appName, featureName) in storedPicks)
+            picks.TryAdd(appName, featureName);
+    }
+
+    /// <summary>
+    /// Applies the selection rules to the selected Session's Host app and Features (null and none when no Session is
+    /// selected).
+    /// </summary>
+    public void Update(string? appName, IEnumerable<string> featureNames)
+    {
+        var picked = appName is null ? null : picks.GetValueOrDefault(appName);
         Features = [.. featureNames.Order(StringComparer.OrdinalIgnoreCase).ThenBy(n => n, StringComparer.Ordinal)];
         Selected = picked is not null && Features.Contains(picked) ? picked : Features.FirstOrDefault();
     }
